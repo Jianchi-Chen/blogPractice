@@ -32,7 +32,7 @@ uuid = { version = "1", features = ["v7", "serde"] }
 # 鉴权 / 密码哈希
 rand = "0.8"
 # rand_core = "0.6.4"
-jsonwebtoken = "9"
+jsonwebtoken = "10"
 argon2 = { version = "0.5", features = ["std"] }
 password-hash = "0.5"
 
