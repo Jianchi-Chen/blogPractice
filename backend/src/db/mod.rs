@@ -8,7 +8,9 @@ use sqlx::{
     sqlite::{SqliteConnectOptions, SqlitePoolOptions},
 };
 use std::env;
-use std::path::Path;
+
+// 嵌入种子数据到二进制文件中
+const SEED_SUPERUSER: &str = include_str!("../../seeds/0001_superuser.sql");
 
 #[derive(Clone)]
 pub struct AppState {
@@ -49,32 +51,36 @@ pub async fn new_pool(database_url: &str) -> Result<SqlitePool, sqlx::Error> {
 pub async fn run_migrations(pool: &SqlitePool) -> anyhow::Result<()> {
     sqlx::migrate!("./migrations").run(pool).await?;
 
-    run_seeds(pool, Path::new("./seeds")).await?;
+    run_seeds(pool).await?;
     Ok(())
 }
 
-/// 执行 seeds 目录下的所有 .sql 文件
-async fn run_seeds(pool: &SqlitePool, dir: &Path) -> anyhow::Result<()> {
-    // if !dir.is_dir() {
-    //     return Err(anyhow!("dir isn't a correct direction! "));
-    // }
+/// 检查是否需要运行种子数据（检查用户表是否为空）
+async fn should_run_seeds(pool: &SqlitePool) -> anyhow::Result<bool> {
+    let count: (i64,) = sqlx::query_as("SELECT COUNT(*) FROM users")
+        .fetch_one(pool)
+        .await?;
+    
+    Ok(count.0 == 0)
+}
 
-    // 1. 收集所有 .sql 文件并按文件名排序, 异步环境下使用tokio::fs
-    let mut entries = tokio::fs::read_dir(dir).await?;
-    let mut files = Vec::new();
-    while let Some(entry) = entries.next_entry().await? {
-        let path = entry.path();
-        if path.extension().is_some_and(|ext| ext == "sql") {
-            files.push(path);
-        }
+/// 执行种子数据（仅在数据库为空时执行）
+async fn run_seeds(pool: &SqlitePool) -> anyhow::Result<()> {
+    // 检查用户表是否为空
+    if !should_run_seeds(pool).await? {
+        tracing::info!("Database already has users, skipping seeds");
+        return Ok(());
     }
-    files.sort();
-
-    // 2. 依次执行
-    for file in files {
-        let sql = tokio::fs::read_to_string(&file).await?;
-        sqlx::query(&sql).execute(pool).await?;
-        // println!("✅ executed: {}", file.display());
-    }
+    
+    tracing::info!("Running seed: superuser");
+    
+    // 执行嵌入的种子数据
+    sqlx::raw_sql(SEED_SUPERUSER)
+        .execute(pool)
+        .await?;
+    
+    tracing::info!("Superuser seed executed successfully");
+    tracing::info!("Default superuser created: username=admin");
+    
     Ok(())
 }

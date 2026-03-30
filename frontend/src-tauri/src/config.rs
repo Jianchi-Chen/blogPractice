@@ -75,14 +75,22 @@ impl Config {
         // 确保目录存在
         if let Err(e) = std::fs::create_dir_all(&app_data_dir) {
             eprintln!("Failed to create app data directory: {}", e);
+            log::error!("Failed to create app data directory: {}", e);
         } else {
-            println!("App data directory: {}", app_data_dir.display());
+            log::info!("App data directory: {}", app_data_dir.display());
         }
 
         let db_path = app_data_dir.join("app.db");
         
-        // 在 Windows 上，将反斜杠转换为正斜杠以避免 SQLite 的路径问题
-        let path_str = db_path.to_string_lossy().replace('\\', "/");
-        format!("sqlite://{}", path_str)
+        // 统一使用正斜杠，SQLite 在所有平台都支持
+        let path_str = db_path
+            .to_str()
+            .expect("Invalid database path")
+            .replace('\\', "/");
+        
+        let db_url = format!("sqlite://{}", path_str);
+        log::info!("Generated database URL: {}", db_url);
+        
+        db_url
     }
 }
