@@ -78,7 +78,7 @@ const select_options: Ref<SelectOption[]> = ref([]);
 const loadArticles = async () => {
     loading.value = true;
     try {
-        const res = await fetchArticles("vistor", search.condition);
+        const res = await fetchArticles(search.condition);
         articles.value = res.data.articles; // default is a object
 
         console.log(articles.value);

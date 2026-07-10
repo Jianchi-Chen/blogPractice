@@ -3,15 +3,18 @@
 //! - 密码哈希/校验（基于 argon2）
 
 use crate::config::Config;
+use crate::models::user::User;
+use crate::repositories::user::find_user_by_id;
 use chrono::{Duration, Utc};
 use jsonwebtoken::{DecodingKey, EncodingKey, Header, Validation};
 use serde::{Deserialize, Serialize};
 
 use argon2::{
-    Argon2,
     password_hash::{PasswordHash, PasswordHasher, PasswordVerifier, SaltString},
+    Argon2,
 };
 use rand::rngs::OsRng;
+use sqlx::SqlitePool;
 
 #[derive(Debug, Serialize, Deserialize, Clone)]
 pub struct Claims {
@@ -26,7 +29,11 @@ fn now_ts() -> usize {
     Utc::now().timestamp().max(0) as usize
 }
 
-pub fn generate_token(config: &Config, user_id: String, username: &str) -> Result<String, jsonwebtoken::errors::Error> {
+pub fn generate_token(
+    config: &Config,
+    user_id: String,
+    username: &str,
+) -> Result<String, jsonwebtoken::errors::Error> {
     let iat = now_ts();
     let exp = (Utc::now() + Duration::seconds(config.jwt_ttl))
         .timestamp()
@@ -73,4 +80,42 @@ pub fn decode_token(config: &Config, token: &str) -> Result<Claims, jsonwebtoken
     )?;
 
     Ok(data.claims)
+}
+
+pub async fn authenticated_user(
+    config: &Config,
+    pool: &SqlitePool,
+    token: &str,
+) -> Result<User, String> {
+    let claims = decode_token(config, token).map_err(|e| format!("Invalid token: {e}"))?;
+    find_user_by_id(pool, claims.user_id)
+        .await
+        .map_err(|e| format!("Database error: {e}"))?
+        .ok_or_else(|| "User not found".to_string())
+}
+
+pub async fn require_admin(config: &Config, pool: &SqlitePool, token: &str) -> Result<(), String> {
+    let user = authenticated_user(config, pool, token).await?;
+    if user.identity == "admin" {
+        Ok(())
+    } else {
+        Err("Admin privileges required".to_string())
+    }
+}
+
+pub async fn optional_token_is_admin(
+    config: &Config,
+    pool: &SqlitePool,
+    token: Option<&str>,
+) -> Result<bool, String> {
+    let Some(token) = token else {
+        return Ok(false);
+    };
+    let Ok(claims) = decode_token(config, token) else {
+        return Ok(false);
+    };
+    let user = find_user_by_id(pool, claims.user_id)
+        .await
+        .map_err(|e| format!("Database error: {e}"))?;
+    Ok(user.is_some_and(|user| user.identity == "admin"))
 }

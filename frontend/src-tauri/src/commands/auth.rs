@@ -1,6 +1,8 @@
 //! 认证相关命令
 
-use crate::auth::{decode_token, generate_token, hash_password, verify_password, Claims};
+use crate::auth::{
+    decode_token, generate_token, hash_password, require_admin, verify_password, Claims,
+};
 use crate::config::Config;
 use crate::models::user::NewUser;
 use crate::repositories::user::{find_user_by_username, insert_common_user};
@@ -42,34 +44,24 @@ pub async fn login(
     let user = match find_user_by_username(pool.inner(), &credentials.username).await {
         Ok(Some(user)) => user,
         Ok(None) => {
-            log::error!(
-                "login failed - user not found"
-            );
+            log::error!("login failed - user not found");
             return Err("未注册用户".to_string());
         }
         Err(e) => {
-            log::error!(
-                "login failed due to database error: {}",
-                e.to_string()
-            );
+            log::error!("login failed due to database error: {}", e);
             return Err(format!("Database error: {}", e));
         }
     };
 
     // 验证密码
     if !verify_password(&credentials.password, &user.password) {
-        log::error!(
-            "login failed due to incorrect password"
-        );
+        log::error!("login failed due to incorrect password");
         return Err("用户名或密码错误".to_string());
     }
 
     // 生成 token
     let token = generate_token(&config, user.id.clone(), &user.username).map_err(|e| {
-        log::error!(
-            "login failed due to token generation error: {}",
-            e.to_string()
-        );
+        log::error!("login failed due to token generation error: {}", e);
         format!("Failed to generate token: {}", e)
     })?;
 
@@ -87,20 +79,35 @@ pub async fn login(
 #[tauri::command]
 pub async fn register(
     user_info: RegisterRequest,
+    token: Option<String>,
     pool: State<'_, SqlitePool>,
     config: State<'_, Config>,
 ) -> Result<LoginResponse, String> {
+    if user_info.username.trim().is_empty() || user_info.password.len() < 3 {
+        return Err("用户名不能为空且密码长度不能少于 3 位".to_string());
+    }
+
     // 检查用户名是否已存在
     let existing = find_user_by_username(pool.inner(), &user_info.username)
         .await
         .map_err(|e| format!("Database error: {}", e))?;
 
     if existing.is_some() {
-        log::warn!(
-            "register attempt with existing username"
-        );
+        log::warn!("register attempt with existing username");
         return Err("用户名已存在".to_string());
     }
+
+    let identity = match user_info.identity.as_deref() {
+        None | Some("user") => "user".to_string(),
+        Some(identity @ ("admin" | "visitor")) => {
+            let token = token
+                .as_deref()
+                .ok_or_else(|| "Admin privileges required".to_string())?;
+            require_admin(&config, pool.inner(), token).await?;
+            identity.to_string()
+        }
+        Some(_) => return Err("无效的用户身份".to_string()),
+    };
 
     // 哈希密码
     let password_hash = hash_password(&user_info.password)
@@ -110,7 +117,7 @@ pub async fn register(
     let new_user = NewUser {
         username: user_info.username.clone(),
         password: password_hash,
-        identity: user_info.identity.unwrap_or("user".to_string()),
+        identity,
     };
 
     let user = insert_common_user(pool.inner(), &new_user)

@@ -50,8 +50,9 @@ pub struct PubArticles {
 pub async fn get_articles(
     pool: &SqlitePool,
     params: GetArticlesParams,
+    include_unpublished: bool,
 ) -> Result<Vec<PubArticles>, sqlx::Error> {
-    let rows = if params.identity == "admin" {
+    let rows = if include_unpublished {
         sqlx::query_as::<_, PubArticles>(
             // r#"..."# Rust原始字符串(raw string)语法，被包裹内容不会被转义
             r#"

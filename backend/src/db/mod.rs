@@ -60,7 +60,7 @@ async fn should_run_seeds(pool: &SqlitePool) -> anyhow::Result<bool> {
     let count: (i64,) = sqlx::query_as("SELECT COUNT(*) FROM users")
         .fetch_one(pool)
         .await?;
-    
+
     Ok(count.0 == 0)
 }
 
@@ -71,16 +71,14 @@ async fn run_seeds(pool: &SqlitePool) -> anyhow::Result<()> {
         tracing::info!("Database already has users, skipping seeds");
         return Ok(());
     }
-    
+
     tracing::info!("Running seed: superuser");
-    
+
     // 执行嵌入的种子数据
-    sqlx::raw_sql(SEED_SUPERUSER)
-        .execute(pool)
-        .await?;
-    
+    sqlx::raw_sql(SEED_SUPERUSER).execute(pool).await?;
+
     tracing::info!("Superuser seed executed successfully");
     tracing::info!("Default superuser created: username=admin");
-    
+
     Ok(())
 }

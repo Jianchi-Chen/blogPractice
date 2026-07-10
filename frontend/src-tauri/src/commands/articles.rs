@@ -1,6 +1,6 @@
 //! 文章相关命令
 
-use crate::auth::decode_token;
+use crate::auth::{optional_token_is_admin, require_admin};
 use crate::config::Config;
 use crate::models::article::{ArticleModel, PubArticles};
 use crate::models::ResponseMessage;
@@ -17,17 +17,17 @@ pub struct ArticleResponse {
 /// 获取文章列表
 #[tauri::command]
 pub async fn get_articles(
-    identity: String,
     condition: Option<String>,
+    token: Option<String>,
     pool: State<'_, SqlitePool>,
+    config: State<'_, Config>,
 ) -> Result<ArticleResponse, String> {
     log::info!("attempt to get_articles");
-    let params = article::GetArticlesParams {
-        identity,
-        condition,
-    };
+    let params = article::GetArticlesParams { condition };
+    let include_unpublished =
+        optional_token_is_admin(&config, pool.inner(), token.as_deref()).await?;
 
-    let articles = article::get_articles(pool.inner(), params)
+    let articles = article::get_articles(pool.inner(), params, include_unpublished)
         .await
         .map_err(|e| format!("Failed to fetch articles: {}", e))?;
 
@@ -39,13 +39,21 @@ pub async fn get_articles(
 #[tauri::command]
 pub async fn get_article_by_id(
     id: String,
+    token: Option<String>,
     pool: State<'_, SqlitePool>,
+    config: State<'_, Config>,
 ) -> Result<ArticleModel, String> {
     log::info!("attempt to get_article_by_id");
     let result = article::find_article_by_id(pool.inner(), &id)
         .await
         .map_err(|e| format!("Failed to fetch article: {}", e))?
         .ok_or("Article not found")?;
+
+    let can_view_unpublished =
+        optional_token_is_admin(&config, pool.inner(), token.as_deref()).await?;
+    if result.status.as_deref() != Some("published") && !can_view_unpublished {
+        return Err("Article not found".to_string());
+    }
 
     log::info!("success get_article_by_id");
     Ok(result)
@@ -60,8 +68,7 @@ pub async fn create_article(
     config: State<'_, Config>,
 ) -> Result<ArticleModel, String> {
     log::info!("attempt to create_article");
-    // 验证 token
-    let _claims = decode_token(&config, &token).map_err(|e| format!("Invalid token: {}", e))?;
+    require_admin(&config, pool.inner(), &token).await?;
 
     let result = article::post_article(pool.inner(), &article_data)
         .await
@@ -84,8 +91,7 @@ pub async fn update_article(
     config: State<'_, Config>,
 ) -> Result<ArticleModel, String> {
     log::info!("attempt to update_article");
-    // 验证 token
-    let _claims = decode_token(&config, &token).map_err(|e| format!("Invalid token: {}", e))?;
+    require_admin(&config, pool.inner(), &token).await?;
 
     let result = article::put_article_by_id(pool.inner(), &id, article_data)
         .await
@@ -107,8 +113,7 @@ pub async fn delete_article(
     config: State<'_, Config>,
 ) -> Result<ResponseMessage, String> {
     log::info!("attempt to delete_article");
-    // 验证 token
-    let _claims = decode_token(&config, &token).map_err(|e| format!("Invalid token: {}", e))?;
+    require_admin(&config, pool.inner(), &token).await?;
 
     article::delete_article_by_id(pool.inner(), &id)
         .await
@@ -130,11 +135,11 @@ pub async fn toggle_article_status(
     config: State<'_, Config>,
 ) -> Result<ArticleModel, String> {
     log::info!("attemp to toggle_article_status");
-    // 验证 token
-    decode_token(&config, &token).map_err(|e| {
-        log::error!("Invalid token: {}", e);
-        format!("Invalid token: {}", e)
-    })?;
+    require_admin(&config, pool.inner(), &token).await?;
+
+    if !matches!(status.toggle.as_str(), "draft" | "published" | "archived") {
+        return Err("Invalid article status".to_string());
+    }
 
     let result = article::patch_article_by_id(pool.inner(), &id, status)
         .await

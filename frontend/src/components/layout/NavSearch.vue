@@ -54,7 +54,7 @@ import { SearchCircleOutline } from "@vicons/ionicons5";
 import { debounce } from "lodash-es";
 import { useRouter } from "vue-router";
 import { fetchSuggestions } from "@/api/article";
-import type { Article } from "@/types/article";
+import type { ArticleSuggestion } from "@/types/article";
 import { useSearchStore } from "@/stores/search";
 
 /**
@@ -67,7 +67,7 @@ const showPopover = ref(false);
 const isExpanded = ref(false);
 const keyword = ref("");
 const loading = ref(false);
-const suggestions: Ref<Article[]> = ref([]);
+const suggestions: Ref<ArticleSuggestion[]> = ref([]);
 const router = useRouter();
 const search = useSearchStore();
 let abortController: AbortController | null = null; // 防抖；取消旧请求

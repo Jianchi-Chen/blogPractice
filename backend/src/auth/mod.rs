@@ -5,6 +5,7 @@
 
 use crate::db::AppState;
 use crate::error::{AppError, AppResult};
+use crate::models::user::find_user_by_id;
 use axum::extract::{FromRef, FromRequestParts};
 use axum::http::header::AUTHORIZATION;
 use axum::http::request::Parts;
@@ -134,8 +135,20 @@ pub fn decode_token(state: &AppState, token: &str) -> AppResult<Claims> {
     Ok(data.claims)
 }
 
+pub async fn is_admin(state: &AppState, user_id: &str) -> AppResult<bool> {
+    let user = find_user_by_id(&state.pool, user_id.to_string()).await?;
+    Ok(user.is_some_and(|user| user.identity == "admin"))
+}
+
+pub async fn require_admin(state: &AppState, claims: &Claims) -> AppResult<()> {
+    if is_admin(state, &claims.user_id).await? {
+        Ok(())
+    } else {
+        Err(AppError::Forbidden)
+    }
+}
+
 // 可选登录器
-#[allow(dead_code)]
 pub struct MaybeJwtAuth(pub Option<Claims>);
 impl<S> FromRequestParts<S> for MaybeJwtAuth
 where

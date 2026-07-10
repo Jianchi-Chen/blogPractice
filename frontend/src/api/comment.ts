@@ -2,6 +2,11 @@ import client from "./client";
 import { useAppStore } from "@/stores/app";
 import { useUserStore } from "@/stores/user";
 import { invoke } from "@tauri-apps/api/core";
+import type {
+    ApiComment,
+    CommentLikeResponse,
+    CommentsResponse,
+} from "@/types/comment";
 
 // 发表评论
 export const postComment = async (
@@ -14,7 +19,7 @@ export const postComment = async (
     const user = useUserStore();
     
     if (app.isTauri) {
-        const data = await invoke("post_comment", {
+        const data = await invoke<ApiComment>("post_comment", {
             token: user.token,
             commentData: {
                 article_id,
@@ -50,14 +55,14 @@ export const fetchComments = async (articleId: string) => {
     const user = useUserStore();
     
     if (app.isTauri) {
-        const data = await invoke("get_comments", {
+        const data = await invoke<CommentsResponse>("get_comments", {
             articleId,
             token: user.token || null
         });
         return { data };
     }
     
-    return client.get(`/comments/${articleId}`);
+    return client.get<CommentsResponse>(`/comments/${articleId}`);
 };
 
 // 获取评论点赞情况
@@ -80,7 +85,7 @@ export const updateCommentLike = async (commentId: string, userToken: string) =>
     const user = useUserStore();
     
     if (app.isTauri) {
-        const data = await invoke("like_comment", {
+        const data = await invoke<CommentLikeResponse>("like_comment", {
             token: user.token,
             payload: {
                 comment_id: commentId
@@ -89,8 +94,7 @@ export const updateCommentLike = async (commentId: string, userToken: string) =>
         return { data };
     }
     
-    return client.put("/api/comment/like", {
+    return client.put<CommentLikeResponse>("/api/comment/like", {
         comment_id: commentId,
     });
 };
-``

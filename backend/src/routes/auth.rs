@@ -1,12 +1,12 @@
-//! /auth 相关路由：注册、登录、获取当前用户信息
+//! /auth 相关路由：注册、登录、获取当前用户信息、验证token
 //! 说明：演示如何组合 models + auth + error + state
 
-use crate::auth::{generate_token, hash_password, verify_password};
+use crate::auth::{
+    MaybeJwtAuth, decode_token, generate_token, hash_password, require_admin, verify_password,
+};
 use crate::db::AppState;
 use crate::error::{AppError, AppResult};
-use crate::models::user::{
-    NewUser, UserPublic, find_user_by_id, find_user_by_username, insert_common_user,
-};
+use crate::models::user::{NewUser, find_user_by_id, find_user_by_username, insert_common_user};
 use axum::{Json, extract::State, http::StatusCode};
 use serde::{Deserialize, Serialize};
 use sqlx::SqlitePool;
@@ -28,8 +28,9 @@ pub struct LoginPayload {
 #[derive(Serialize)]
 pub struct AuthResponse {
     pub token: String,
-    pub user: UserPublic,
-    // pub message: Option<String>,
+    pub user_id: String,
+    pub username: String,
+    pub identity: String,
 }
 
 /// POST /register
@@ -38,6 +39,7 @@ pub struct AuthResponse {
 /// admin创建用户时可带身份字段
 pub async fn register(
     State(state): State<Arc<AppState>>,
+    MaybeJwtAuth(requester): MaybeJwtAuth,
     Json(payload): Json<RegisterPayload>,
 ) -> AppResult<(StatusCode, Json<AuthResponse>)> {
     // 简单校验
@@ -56,15 +58,19 @@ pub async fn register(
         return Err(AppError::BadRequest("username already registered".into()));
     }
 
-    // 检查身份字段（仅限 admin 创建用户时使用）
-    let identity = match payload.clone().identity {
-        Some(id) if id == "admin" || id == "user" || id == "visitor" => id.clone(),
+    // 公开注册只能创建普通用户，其他身份必须由管理员创建。
+    let identity = match payload.identity.as_deref() {
+        None | Some("user") => "user".to_string(),
+        Some(identity @ ("admin" | "visitor")) => {
+            let claims = requester.as_ref().ok_or_else(|| AppError::Forbidden)?;
+            require_admin(&state, claims).await?;
+            identity.to_string()
+        }
         Some(_) => {
             return Err(AppError::BadRequest(
                 "invalid identity, must be 'admin', 'user' or 'visitor'".into(),
             ));
         }
-        None => "user".to_string(), // 默认身份为普通用户
     };
 
     let password_hash = hash_password(&payload.password)?;
@@ -75,7 +81,6 @@ pub async fn register(
     };
     let user = insert_common_user(&state.pool, &new).await?;
     let token = generate_token(&state, user.id.clone(), &user.username)?;
-    let user_public = user.clone().into();
 
     tracing::info!(
         "用户注册成功: {}, 用户身份为: {}",
@@ -86,7 +91,9 @@ pub async fn register(
         StatusCode::CREATED,
         Json(AuthResponse {
             token,
-            user: user_public,
+            user_id: user.id,
+            username: user.username,
+            identity: user.identity,
         }),
     ))
 }
@@ -109,12 +116,14 @@ pub async fn login(
         return Err(AppError::Unauthorized("invalid credentials".into()));
     }
 
-    tracing::info!("/login: {:?}", payload.clone());
+    tracing::info!("/login: user authenticated: {}", payload.username);
 
     let token = generate_token(&state, user.id.clone(), &user.username)?;
     Ok(Json(AuthResponse {
         token,
-        user: user.into(),
+        user_id: user.id,
+        username: user.username,
+        identity: user.identity,
     }))
 }
 
@@ -130,6 +139,67 @@ pub async fn get_ident_by_id(pool: &SqlitePool, id: &str) -> Result<String, sqlx
             "visitor".to_string()
         }
     };
-    dbg!(&ident);
     Ok(ident)
+}
+
+/// 验证 token
+#[derive(Deserialize)]
+pub struct VerifyTokenRequest {
+    pub token: String,
+}
+
+#[derive(Serialize)]
+pub struct VerifyTokenResponse {
+    pub user_id: String,
+    pub message: String,
+    pub exp: usize,
+    pub iat: usize,
+}
+
+pub async fn verify_token(
+    State(state): State<Arc<AppState>>,
+    Json(payload): Json<VerifyTokenRequest>,
+) -> AppResult<Json<VerifyTokenResponse>> {
+    let claims = decode_token(&state, &payload.token)
+        .map_err(|_| AppError::Unauthorized("Invalid token".into()))?;
+
+    Ok(Json(VerifyTokenResponse {
+        user_id: claims.user_id,
+        message: claims.message,
+        exp: claims.exp,
+        iat: claims.iat,
+    }))
+}
+
+/// 获取当前用户信息
+#[derive(Deserialize)]
+pub struct GetCurrentUserRequest {
+    pub token: String,
+}
+
+#[derive(Serialize)]
+pub struct GetCurrentUserResponse {
+    pub id: String,
+    pub username: String,
+    pub identity: String,
+}
+
+pub async fn get_current_user(
+    State(state): State<Arc<AppState>>,
+    Json(payload): Json<GetCurrentUserRequest>,
+) -> AppResult<Json<GetCurrentUserResponse>> {
+    // 验证 token
+    let claims = decode_token(&state, &payload.token)
+        .map_err(|_| AppError::Unauthorized("Invalid token".into()))?;
+
+    // 查询用户信息
+    let user = find_user_by_id(&state.pool, claims.user_id)
+        .await?
+        .ok_or_else(|| AppError::NotFound)?;
+
+    Ok(Json(GetCurrentUserResponse {
+        id: user.id,
+        username: user.username,
+        identity: user.identity,
+    }))
 }

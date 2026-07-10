@@ -79,7 +79,7 @@ onMounted(() => {
 
 // 加载数据
 const loadArticlesAndUsers = async () => {
-    const res = await fetchArticles("admin");
+    const res = await fetchArticles();
     articles.value = res.data.articles;
 
     const resUsers = await fetchUsers(20);

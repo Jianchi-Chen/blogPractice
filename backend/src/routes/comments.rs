@@ -7,7 +7,7 @@ use axum::{
 use serde::{Deserialize, Serialize};
 
 use crate::{
-    auth::JwtAuth,
+    auth::{JwtAuth, MaybeJwtAuth},
     db::AppState,
     error::{AppError, AppResult},
     models::{
@@ -57,7 +57,7 @@ pub struct CommentsLikeResponse {
 pub async fn handle_get_comments(
     State(state): State<Arc<AppState>>,
     Path(arti_id): Path<String>,
-    JwtAuth(auth): JwtAuth,
+    MaybeJwtAuth(maybe_auth): MaybeJwtAuth,
 ) -> AppResult<Json<CommentsResponse>> {
     tracing::info!("Fetching comments for article ID: {:?}", arti_id);
 
@@ -66,7 +66,10 @@ pub async fn handle_get_comments(
         None => return Err(AppError::BadRequest("未找到文章".into())),
     };
 
-    let res = fetch_comments_by_article_id(&state.pool, &arti_id, &auth.user_id).await?;
+    // 获取用户ID（如果有token）
+    let user_id = maybe_auth.map(|claims| claims.user_id).unwrap_or_default();
+
+    let res = fetch_comments_by_article_id(&state.pool, &arti_id, &user_id).await?;
 
     Ok(Json(CommentsResponse { comments: res }))
 }
@@ -78,14 +81,14 @@ pub async fn handle_post_comment(
     JwtAuth(auth): JwtAuth,
     Json(payload): Json<CommentIncome>,
 ) -> AppResult<Json<Comment>> {
-    let mut username = "".to_string();
-    if let Some(u) = find_user_by_id(&state.pool, auth.user_id).await? {
-        if u.identity == "visitor" {
-            tracing::info!("游客身份,禁止评论,当前用户身份: {}", u.identity);
-            return Err(AppError::Unauthorized("未登录".into()));
-        }
-        username = u.username;
+    let user = find_user_by_id(&state.pool, auth.user_id)
+        .await?
+        .ok_or_else(|| AppError::Unauthorized("用户不存在".into()))?;
+    if user.identity == "visitor" {
+        tracing::info!("游客身份,禁止评论,当前用户身份: {}", user.identity);
+        return Err(AppError::Unauthorized("未登录".into()));
     }
+    let username = user.username;
 
     let res = if (find_article_by_id(&state.pool, &payload.article_id).await?).is_some() {
         post_comment_by_article_id(&state.pool, payload, &username).await?

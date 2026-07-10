@@ -1,4 +1,8 @@
-import type { Article } from "@/types/article";
+import type {
+    Article,
+    ArticleListResponse,
+    SuggestionResponse,
+} from "@/types/article";
 import client from "./client";
 import { useAppStore } from "@/stores/app";
 import { useUserStore } from "@/stores/user";
@@ -7,19 +11,20 @@ import { invoke } from "@tauri-apps/api/core";
 // 封装api函数返回promis，故前端调用时使用async/await即可
 
 // 获取文章列表
-export const fetchArticles = async (identity: string, condition?: string) => {
+export const fetchArticles = async (condition?: string) => {
     const app = useAppStore();
+    const user = useUserStore();
     
     if (app.isTauri) {
-        const data = await invoke("get_articles", { 
-            identity, 
-            condition 
+        const data = await invoke<ArticleListResponse>("get_articles", {
+            condition,
+            token: user.token || null,
         });
         return { data };
     }
     
     // GET请求中，第二个参数需要写在params里，params 是专门用来指定 URL 查询参数的字段，它的值必须是一个对象
-    return client.get("/articles", { params: { identity, condition } });
+    return client.get<ArticleListResponse>("/articles", { params: { condition } });
 };
 
 // 获取文章详情
@@ -27,9 +32,13 @@ export const fetchArticles = async (identity: string, condition?: string) => {
 // 模板字面量使用反斜杠``包裹，否则不识别！
 export const fetchArticleById = async (id: Article["id"]) => {
     const app = useAppStore();
+    const user = useUserStore();
     
     if (app.isTauri) {
-        const data = await invoke("get_article_by_id", { id });
+        const data = await invoke<Article>("get_article_by_id", {
+            id,
+            token: user.token || null,
+        });
         return { data };
     }
     
@@ -107,24 +116,14 @@ export const fetchSuggestions = async (keyword: string) => {
     const app = useAppStore();
     
     if (app.isTauri) {
-        const data = await invoke("get_suggestions", { keyword });
+        const data = await invoke<SuggestionResponse>("get_suggestions", { keyword });
         return { data };
     }
     
-    return client.get(`/suggestions/${keyword}`);
+    return client.get<SuggestionResponse>(`/suggestions/${encodeURIComponent(keyword)}`);
 };
 
 // 根据标签获取文章
 export const fetchArticleByConditions = async (condition: string) => {
-    const app = useAppStore();
-    
-    if (app.isTauri) {
-        const data = await invoke("get_articles", { 
-            identity: "visitor",
-            condition 
-        });
-        return { data };
-    }
-    
-    return client.get(`/article/${condition}`);
+    return fetchArticles(condition);
 };

@@ -67,6 +67,10 @@ pub async fn delete_user(
         return Err("Only admin can delete users".to_string());
     }
 
+    if user_id == "1" {
+        return Err("Cannot delete the superadmin account".to_string());
+    }
+
     delete_user_by_id(pool.inner(), &user_id)
         .await
         .map_err(|e| format!("Failed to delete user: {}", e))?;
@@ -96,11 +100,20 @@ pub async fn edit_account(
         return Err("Only admin can edit user accounts".to_string());
     }
 
-    // 防止更改超管的权限
-    if payload.edited_identity.as_ref().map(|s| s.as_str()) == Some("admin")
-        && payload.edited_id == "1"
+    if let Some(identity) = payload.edited_identity.as_deref() {
+        if !matches!(identity, "admin" | "user" | "visitor") {
+            return Err("Invalid user identity".to_string());
+        }
+    }
+
+    // 超级管理员账号必须始终保留管理员身份。
+    if payload.edited_id == "1"
+        && payload
+            .edited_identity
+            .as_deref()
+            .is_some_and(|identity| identity != "admin")
     {
-        return Err("Cannot change superadmin identity".to_string());
+        return Err("Cannot demote the superadmin account".to_string());
     }
 
     // 将传递的密码转为 hash

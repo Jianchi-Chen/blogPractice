@@ -17,6 +17,7 @@
                             </n-form-item-row>
                             <n-form-item-row label="密码" path="password">
                                 <n-input
+                                    type="password"
                                     v-model:value="signinForm.password"
                                     placeholder="请输入密码"
                                 />
@@ -47,12 +48,14 @@
                             </n-form-item-row>
                             <n-form-item-row label="密码" path="password">
                                 <n-input
+                                    type="password"
                                     v-model:value="registerForm.password"
                                     placeholder="请输入用户名"
                                 />
                             </n-form-item-row>
                             <n-form-item-row label="重复密码" path="repassword">
                                 <n-input
+                                    type="password"
                                     v-model:value="registerForm.repassword"
                                     placeholder="请输入用户名"
                                 />

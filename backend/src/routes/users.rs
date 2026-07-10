@@ -19,9 +19,16 @@ pub struct ListUsersResponse {
 // HTTP层函数，对外接口
 pub async fn get_users(
     State(state): State<Arc<AppState>>,
+    JwtAuth(auth): JwtAuth,
     Query(query): Query<UsersQuery>,
 ) -> AppResult<Json<ListUsersResponse>> {
     tracing::info!("Received query: {:?}", query);
+
+    // 验证用户身份
+    if get_ident_by_id(&state.pool, &auth.user_id).await? != "admin" {
+        tracing::warn!("Unauthorized get_users attempt by user: {:?}", auth.user_id);
+        return Err(AppError::Unauthorized("only admin can view users".into()));
+    }
 
     let default_limit = query.limit.unwrap_or(10);
 
@@ -42,6 +49,12 @@ pub async fn delete_users(
         tracing::warn!("Unauthorized delete attempt by user: {:?}", auth.user_id);
         return Err(crate::error::AppError::Unauthorized(
             "only admin can delete users".into(),
+        ));
+    }
+
+    if user_id == "1" {
+        return Err(AppError::BadRequest(
+            "cannot delete the superadmin account".into(),
         ));
     }
 
@@ -67,15 +80,6 @@ pub async fn edit_account(
         auth.user_id
     );
 
-    // 验证前端传来的token是否为空
-    if payload.current_token.clone().is_none() {
-        tracing::warn!(
-            "No current_token provided in edit account request by user: {:?}",
-            auth.user_id
-        );
-        return Err(AppError::BadRequest("current_token is required".into()));
-    }
-
     // 仅管理员编辑
     if get_ident_by_id(&state.pool, &auth.user_id).await? != "admin" {
         tracing::warn!(
@@ -88,14 +92,22 @@ pub async fn edit_account(
         ));
     }
 
-    // 防止更改超管的权限
-    if payload.edited_identity.clone().unwrap_or_default() == "admin" && &payload.edited_id == "1" {
-        tracing::warn!(
-            "Attempt to change identity to superadmin by user: {:?}",
-            auth.user_id
-        );
-        return Err(AppError::Unauthorized(
-            "cannot change identity to superadmin".into(),
+    if let Some(identity) = payload.edited_identity.as_deref()
+        && !matches!(identity, "admin" | "user" | "visitor")
+    {
+        return Err(AppError::BadRequest("invalid identity".into()));
+    }
+
+    // 超级管理员账号必须始终保留管理员身份。
+    if payload.edited_id == "1"
+        && payload
+            .edited_identity
+            .as_deref()
+            .is_some_and(|identity| identity != "admin")
+    {
+        tracing::warn!("Attempt to demote superadmin by user: {:?}", auth.user_id);
+        return Err(AppError::BadRequest(
+            "cannot change superadmin identity".into(),
         ));
     }
 
@@ -120,7 +132,6 @@ pub async fn edit_account(
         None
     };
     let payload = AdminEditAccountPayload {
-        current_token: payload.current_token,
         edited_id: payload.edited_id,
         edited_username: payload.edited_username,
         edited_password: new_password,
@@ -136,7 +147,6 @@ pub async fn edit_account(
 
 #[derive(Deserialize, Debug)]
 pub struct AdminEditAccountPayload {
-    pub current_token: Option<String>,
     pub edited_id: String,
     pub edited_username: Option<String>,
     pub edited_password: Option<String>,

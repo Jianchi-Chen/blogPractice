@@ -1,6 +1,6 @@
 import { useUserStore } from "@/stores/user";
 import { useAppStore } from "@/stores/app";
-import type { EditUserData } from "@/types/user";
+import type { AuthResponse, EditUserData } from "@/types/user";
 import client from "@/api/client";
 import { invoke } from "@tauri-apps/api/core";
 
@@ -10,13 +10,17 @@ export const registerAccount = async (args: {
     identity?: string;
 }) => {
     const app = useAppStore();
+    const user = useUserStore();
 
     if (app.isTauri) {
-        const data = await invoke("register", { userInfo: args });
+        const data = await invoke<AuthResponse>("register", {
+            userInfo: args,
+            token: user.token || null,
+        });
         return { data };
     }
 
-    return client.post("/api/register", args);
+    return client.post<AuthResponse>("/api/register", args);
 };
 
 export const loginAccount = async (data: {
@@ -26,11 +30,11 @@ export const loginAccount = async (data: {
     const app = useAppStore();
 
     if (app.isTauri) {
-        const result = await invoke("login", { credentials: data });
+        const result = await invoke<AuthResponse>("login", { credentials: data });
         return { data: result };
     }
 
-    return client.post("/api/login", data);
+    return client.post<AuthResponse>("/api/login", data);
 };
 
 export const fetchUsers = async (limit: number) => {

@@ -64,7 +64,7 @@ const loadMenu = async () => {
         menuOptions.value = [goHomeMenuOptions, hrMenuOptions];
         // console.log(menuOptions.value);
 
-        const res = await fetchArticles("vistor");
+        const res = await fetchArticles();
         if (Array.isArray(res.data.articles)) {
             const tagMap = new Map<string, any>(); // 用于快速查找已有标签项
             res.data.articles.forEach((i: any) => {

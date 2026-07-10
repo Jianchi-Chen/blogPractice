@@ -1,7 +1,6 @@
 import { ref } from "vue";
 import { useMessage } from "naive-ui";
 import { useUserStore } from "@/stores/user";
-import { useAppStore } from "@/stores/app";
 import { fetchComments, updateCommentLike, DeleteComment } from "@/api/comment";
 
 export function useComments() {
@@ -9,7 +8,6 @@ export function useComments() {
     const ifComment = ref(false);
     const message = useMessage();
     const userStore = useUserStore();
-    const AppStore = useAppStore();
 
     const buildCommentsTree = (commentsData: any) => {
         const map = new Map();
@@ -35,14 +33,7 @@ export function useComments() {
     const loadComments = async (articleId: string) => {
         try {
             const res = await fetchComments(articleId);
-            let commentsData: any[];
-            if (AppStore.isTauri) {
-                commentsData = res.data as any[];
-            } else {
-                commentsData = (res as any).data.comments;
-            }
-
-            comments.value = buildCommentsTree(commentsData);
+            comments.value = buildCommentsTree(res.data.comments);
             ifComment.value = comments.value.length > 0;
         } catch (e) {
             console.error("Error fetching comments:", e);
@@ -103,12 +94,7 @@ export function useComments() {
 
         try {
             const res = await updateCommentLike(commentId, utoken);
-            let responseData: any;
-            if (AppStore.isTauri) {
-                responseData = res.data;
-            } else {
-                responseData = (res as any).data.like_or_unlike;
-            }
+            const responseData = res.data.like_or_unlike;
 
             const isLiked = responseData === "liked";
             const expectedState = previousLikedState === 0 ? 1 : 0;

@@ -9,7 +9,6 @@ use crate::models::article::{ArticleModel, PubArticles};
 
 #[derive(Deserialize, Debug)]
 pub struct GetArticlesParams {
-    pub identity: String,
     pub condition: Option<String>,
 }
 
@@ -32,8 +31,9 @@ pub struct NewStatus {
 pub async fn get_articles(
     pool: &SqlitePool,
     params: GetArticlesParams,
+    include_unpublished: bool,
 ) -> Result<Vec<PubArticles>, sqlx::Error> {
-    let rows = if params.identity == "admin" {
+    let rows = if include_unpublished {
         sqlx::query_as::<_, PubArticles>(
             r#"
             SELECT id, title, summary, created_at, status, views, tags FROM articles

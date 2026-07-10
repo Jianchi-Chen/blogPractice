@@ -11,6 +11,13 @@ export const UserSchema = z.object({
 
 export type User = z.infer<typeof UserSchema>;
 
+export interface AuthResponse {
+    token: string;
+    user_id: string;
+    username: string;
+    identity: string;
+}
+
 export const createEmptyComment = (): User => {
     return UserSchema.parse({
         username: "unknown username",

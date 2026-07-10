@@ -12,6 +12,26 @@ export const CommentSchema = z.object({
 
 export type Comment = z.infer<typeof CommentSchema>;
 
+export interface ApiComment {
+    comment_id: string;
+    article_id?: string;
+    user?: string;
+    content?: string;
+    created_at?: string;
+    parent_id?: string;
+    like_count?: number;
+    liked_by_me?: number;
+}
+
+export interface CommentsResponse {
+    comments: ApiComment[];
+}
+
+export interface CommentLikeResponse {
+    comment_id: string;
+    like_or_unlike: "liked" | "unliked";
+}
+
 export const createEmptyComment = (): Comment => {
     return CommentSchema.parse({
         content: "unknown comment",

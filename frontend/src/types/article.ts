@@ -20,6 +20,19 @@ export const ArticleSchema = z.object({
 
 export type Article = z.infer<typeof ArticleSchema>; // 自动推导类型
 
+export interface ArticleListResponse {
+  articles: Article[];
+}
+
+export interface ArticleSuggestion {
+  id?: string;
+  title?: string;
+}
+
+export interface SuggestionResponse {
+  item: ArticleSuggestion[];
+}
+
 // 初始化Article
 export const createEmptyArticle = (): Article => {
   return ArticleSchema.parse({
