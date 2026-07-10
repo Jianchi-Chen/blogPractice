@@ -125,9 +125,10 @@ pub async fn post_comment_by_article_id(
 pub async fn delete_comment_by_comment_id(
     pool: &SqlitePool,
     comment_id: &str,
-) -> Result<String, sqlx::Error> {
+) -> Result<u64, sqlx::Error> {
     tracing::info!("Deleting comment with ID: {:?}", comment_id);
-    let _ = sqlx::query!(r#"DELETE FROM comments WHERE comment_id = ?"#, comment_id)
+    let result = sqlx::query(r#"DELETE FROM comments WHERE comment_id = ?"#)
+        .bind(comment_id)
         .execute(pool)
         .await
         .map_err(|e| {
@@ -135,7 +136,7 @@ pub async fn delete_comment_by_comment_id(
             e
         })?;
 
-    Ok("done".to_string())
+    Ok(result.rows_affected())
 }
 
 // 点赞评论
@@ -150,73 +151,56 @@ pub async fn like_comment_db(
         user_id
     );
 
-    // 检查用户是否已经点赞过该评论
-    let if_existing_like = sqlx::query!(
-        r#"SELECT * FROM comment_likes WHERE comment_id = ? AND user_id = ?"#,
-        payload.comment_id,
-        user_id
+    let comment_id = &payload.comment_id;
+    let mut transaction = pool.begin().await?;
+    let deleted = sqlx::query(r#"DELETE FROM comment_likes WHERE comment_id = ? AND user_id = ?"#)
+        .bind(comment_id)
+        .bind(user_id)
+        .execute(&mut *transaction)
+        .await?
+        .rows_affected()
+        == 1;
+
+    let result = if deleted {
+        "unliked"
+    } else {
+        let inserted = sqlx::query(
+            r#"
+            INSERT INTO comment_likes (comment_id, user_id, created_at, article_id)
+            SELECT comment_id, ?, datetime('now'), article_id
+            FROM comments
+            WHERE comment_id = ?
+            "#,
+        )
+        .bind(user_id)
+        .bind(comment_id)
+        .execute(&mut *transaction)
+        .await?;
+
+        if inserted.rows_affected() == 0 {
+            return Err(sqlx::Error::RowNotFound);
+        }
+        "liked"
+    };
+
+    let updated = sqlx::query(
+        r#"
+        UPDATE comments
+        SET like_count = (
+            SELECT COUNT(*) FROM comment_likes WHERE comment_id = ?
+        )
+        WHERE comment_id = ?
+        "#,
     )
-    .fetch_optional(pool)
-    .await
-    .map_err(|e| {
-        eprintln!("db like error: {:?}", e);
-        e
-    })?;
+    .bind(comment_id)
+    .bind(comment_id)
+    .execute(&mut *transaction)
+    .await?;
 
-    if if_existing_like.is_some() {
-        // 取消点赞
-        sqlx::query!(
-            r#"DELETE FROM comment_likes WHERE comment_id = ? AND user_id = ?"#,
-            payload.comment_id,
-            user_id
-        )
-        .execute(pool)
-        .await
-        .map_err(|e| {
-            eprintln!("db like error: {:?}", e);
-            e
-        })?;
-
-        // 更新评论的点赞数
-        sqlx::query!(
-            r#"UPDATE comments SET like_count = like_count - 1 WHERE comment_id = ?"#,
-            payload.comment_id
-        )
-        .execute(pool)
-        .await
-        .map_err(|e| {
-            eprintln!("db like error: {:?}", e);
-            e
-        })?;
-
-        // 返回取消点赞结果
-        return Ok("unliked".to_string());
+    if updated.rows_affected() == 0 {
+        return Err(sqlx::Error::RowNotFound);
     }
 
-    // 插入点赞记录
-    sqlx::query!(
-        r#"INSERT INTO comment_likes (comment_id, user_id) VALUES (?, ?)"#,
-        payload.comment_id,
-        user_id
-    )
-    .execute(pool)
-    .await
-    .map_err(|e| {
-        eprintln!("db like error: {:?}", e);
-        e
-    })?;
-
-    // 更新评论的点赞数
-    sqlx::query!(
-        r#"UPDATE comments SET like_count = like_count + 1 WHERE comment_id = ?"#,
-        payload.comment_id
-    )
-    .execute(pool)
-    .await
-    .map_err(|e| {
-        eprintln!("db like error: {:?}", e);
-        e
-    })?;
-
-    Ok("liked".to_string())
+    transaction.commit().await?;
+    Ok(result.to_string())
 }

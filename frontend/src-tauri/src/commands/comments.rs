@@ -80,9 +80,12 @@ pub async fn delete_comment(
 ) -> Result<(), String> {
     require_admin(&config, pool.inner(), &token).await?;
 
-    delete_comment_by_comment_id(pool.inner(), &comment_id)
+    let rows_affected = delete_comment_by_comment_id(pool.inner(), &comment_id)
         .await
         .map_err(|e| format!("Failed to delete comment: {}", e))?;
+    if rows_affected == 0 {
+        return Err("Comment not found".to_string());
+    }
 
     Ok(())
 }
@@ -101,7 +104,10 @@ pub async fn like_comment(
     let comment_id = payload.comment_id.clone();
     let result = like_comment_db(pool.inner(), payload, &claims.user_id)
         .await
-        .map_err(|e| format!("Failed to like comment: {}", e))?;
+        .map_err(|error| match error {
+            sqlx::Error::RowNotFound => "Comment not found".to_string(),
+            error => format!("Failed to like comment: {}", error),
+        })?;
 
     Ok(CommentsLikeResponse {
         comment_id,

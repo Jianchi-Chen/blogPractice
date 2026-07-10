@@ -109,8 +109,8 @@ pub async fn handle_delete_comment(
         return Err(AppError::Unauthorized("权限不足".into()));
     };
 
-    if delete_comment_by_comment_id(&state.pool, &comment_id).await? != "done" {
-        return Err(AppError::BadRequest("删除失败".into()));
+    if delete_comment_by_comment_id(&state.pool, &comment_id).await? == 0 {
+        return Err(AppError::NotFound);
     }
 
     let res = DeleteCommentParams {
@@ -142,7 +142,12 @@ pub async fn like_comment(
         return Err(AppError::Unauthorized("权限不足，无法点赞".into()));
     }
 
-    let res = like_comment_db(&state.pool, payload.clone(), &auth.user_id).await?;
+    let res = like_comment_db(&state.pool, payload.clone(), &auth.user_id)
+        .await
+        .map_err(|error| match error {
+            sqlx::Error::RowNotFound => AppError::NotFound,
+            error => AppError::Sqlx(error),
+        })?;
 
     tracing::info!("Like or unlike comment successfully: {:?}", res);
 

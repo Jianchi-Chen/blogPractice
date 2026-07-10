@@ -14,6 +14,8 @@ use std::fs;
 use std::path::PathBuf;
 use tauri::{AppHandle, Manager, State};
 
+use super::map_username_write_error;
+
 #[derive(Serialize)]
 pub struct ListUsersResponse {
     users: Vec<UserPublic>,
@@ -71,9 +73,12 @@ pub async fn delete_user(
         return Err("Cannot delete the superadmin account".to_string());
     }
 
-    delete_user_by_id(pool.inner(), &user_id)
+    let rows_affected = delete_user_by_id(pool.inner(), &user_id)
         .await
         .map_err(|e| format!("Failed to delete user: {}", e))?;
+    if rows_affected == 0 {
+        return Err("User not found".to_string());
+    }
 
     Ok(ResponseMessage {
         message: "done".to_string(),
@@ -136,7 +141,7 @@ pub async fn edit_account(
 
     edit_user_account(pool.inner(), updated_payload)
         .await
-        .map_err(|e| format!("Failed to edit account: {}", e))?;
+        .map_err(map_username_write_error)?;
 
     Ok(ResponseMessage {
         message: "done".to_string(),

@@ -10,6 +10,8 @@ use serde::{Deserialize, Serialize};
 use sqlx::SqlitePool;
 use tauri::State;
 
+use super::map_username_write_error;
+
 #[derive(Debug, Deserialize)]
 pub struct LoginRequest {
     pub username: String,
@@ -122,7 +124,7 @@ pub async fn register(
 
     let user = insert_common_user(pool.inner(), &new_user)
         .await
-        .map_err(|e| format!("Failed to create user: {}", e))?;
+        .map_err(map_username_write_error)?;
 
     // 生成 token
     let token = generate_token(&config, user.id.clone(), &user.username)

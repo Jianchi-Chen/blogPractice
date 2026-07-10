@@ -67,3 +67,14 @@ impl IntoResponse for AppError {
 
 /// 统一结果类型，简化返回
 pub type AppResult<T> = Result<T, AppError>;
+
+pub fn map_username_write_error(error: sqlx::Error) -> AppError {
+    if error
+        .as_database_error()
+        .is_some_and(|database_error| database_error.is_unique_violation())
+    {
+        AppError::BadRequest("username already registered".into())
+    } else {
+        AppError::Sqlx(error)
+    }
+}

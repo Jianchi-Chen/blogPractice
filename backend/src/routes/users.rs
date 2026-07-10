@@ -2,7 +2,7 @@
 
 use crate::auth::{JwtAuth, hash_password};
 use crate::db::AppState;
-use crate::error::{AppError, AppResult};
+use crate::error::{AppError, AppResult, map_username_write_error};
 use crate::models::user::{UserPublic, delete_user_by_id, edit_user_account, list_users};
 use crate::routes::auth::get_ident_by_id;
 use axum::extract::{Path, Query};
@@ -58,7 +58,9 @@ pub async fn delete_users(
         ));
     }
 
-    delete_user_by_id(&state.pool, &user_id).await?;
+    if delete_user_by_id(&state.pool, &user_id).await? == 0 {
+        return Err(AppError::NotFound);
+    }
     tracing::info!("Deleted user: {:?}", user_id);
 
     Ok(StatusCode::NO_CONTENT)
@@ -138,7 +140,9 @@ pub async fn edit_account(
         edited_identity: payload.edited_identity,
     };
 
-    edit_user_account(&state.pool, payload).await?;
+    edit_user_account(&state.pool, payload)
+        .await
+        .map_err(map_username_write_error)?;
 
     tracing::info!("Edited account for user: {:?}", auth.user_id);
 

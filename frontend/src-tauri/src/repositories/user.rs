@@ -17,7 +17,7 @@ pub struct AdminEditAccountPayload {
 /// 新增用户
 pub async fn insert_common_user(pool: &SqlitePool, new: &NewUser) -> Result<User, sqlx::Error> {
     let id = Uuid::now_v7().to_string();
-    
+
     sqlx::query_as::<_, User>(
         r#"
         INSERT INTO users (id, username, password, identity)
@@ -78,11 +78,12 @@ pub async fn list_users(pool: &SqlitePool, limit: i32) -> Result<Vec<UserPublic>
 }
 
 /// 通过id删除用户
-pub async fn delete_user_by_id(pool: &SqlitePool, id: &str) -> Result<(), sqlx::Error> {
-    sqlx::query!(r#"DELETE FROM users WHERE id = ?"#, id)
+pub async fn delete_user_by_id(pool: &SqlitePool, id: &str) -> Result<u64, sqlx::Error> {
+    let result = sqlx::query(r#"DELETE FROM users WHERE id = ?"#)
+        .bind(id)
         .execute(pool)
         .await?;
-    Ok(())
+    Ok(result.rows_affected())
 }
 
 /// 编辑用户账号
@@ -112,12 +113,9 @@ pub async fn edit_user_account(
 
 /// 通过 ID 获取用户身份
 pub async fn get_ident_by_id(pool: &SqlitePool, user_id: &str) -> Result<String, sqlx::Error> {
-    let user = sqlx::query!(
-        r#"SELECT identity FROM users WHERE id = ?"#,
-        user_id
-    )
-    .fetch_one(pool)
-    .await?;
+    let user = sqlx::query!(r#"SELECT identity FROM users WHERE id = ?"#, user_id)
+        .fetch_one(pool)
+        .await?;
 
     Ok(user.identity.unwrap_or_default())
 }

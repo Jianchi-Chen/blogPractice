@@ -5,7 +5,7 @@ use crate::auth::{
     MaybeJwtAuth, decode_token, generate_token, hash_password, require_admin, verify_password,
 };
 use crate::db::AppState;
-use crate::error::{AppError, AppResult};
+use crate::error::{AppError, AppResult, map_username_write_error};
 use crate::models::user::{NewUser, find_user_by_id, find_user_by_username, insert_common_user};
 use axum::{Json, extract::State, http::StatusCode};
 use serde::{Deserialize, Serialize};
@@ -79,7 +79,9 @@ pub async fn register(
         password: password_hash,
         identity: identity.clone(),
     };
-    let user = insert_common_user(&state.pool, &new).await?;
+    let user = insert_common_user(&state.pool, &new)
+        .await
+        .map_err(map_username_write_error)?;
     let token = generate_token(&state, user.id.clone(), &user.username)?;
 
     tracing::info!(

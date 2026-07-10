@@ -107,11 +107,12 @@ pub async fn list_users(pool: &SqlitePool, limit: i32) -> Result<Vec<UserPublic>
 }
 
 /// 通过id删除用户
-pub async fn delete_user_by_id(pool: &SqlitePool, id: &str) -> Result<(), sqlx::Error> {
-    sqlx::query!(r#"DELETE FROM users WHERE id = ?"#, id)
+pub async fn delete_user_by_id(pool: &SqlitePool, id: &str) -> Result<u64, sqlx::Error> {
+    let result = sqlx::query(r#"DELETE FROM users WHERE id = ?"#)
+        .bind(id)
         .execute(pool)
         .await?;
-    Ok(())
+    Ok(result.rows_affected())
 }
 
 /// 编辑用户账号

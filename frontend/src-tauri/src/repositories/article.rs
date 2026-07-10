@@ -109,12 +109,12 @@ pub async fn find_article_by_id(
 }
 
 /// 删除文章
-pub async fn delete_article_by_id(pool: &SqlitePool, id: &str) -> Result<(), sqlx::Error> {
-    sqlx::query(r#"DELETE FROM articles WHERE id = ?"#)
+pub async fn delete_article_by_id(pool: &SqlitePool, id: &str) -> Result<u64, sqlx::Error> {
+    let result = sqlx::query(r#"DELETE FROM articles WHERE id = ?"#)
         .bind(id)
         .execute(pool)
         .await?;
-    Ok(())
+    Ok(result.rows_affected())
 }
 
 /// 修改文章

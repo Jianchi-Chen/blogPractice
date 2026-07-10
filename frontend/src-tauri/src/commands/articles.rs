@@ -115,9 +115,12 @@ pub async fn delete_article(
     log::info!("attempt to delete_article");
     require_admin(&config, pool.inner(), &token).await?;
 
-    article::delete_article_by_id(pool.inner(), &id)
+    let rows_affected = article::delete_article_by_id(pool.inner(), &id)
         .await
         .map_err(|e| format!("Failed to delete article: {}", e))?;
+    if rows_affected == 0 {
+        return Err("Article not found".to_string());
+    }
 
     log::info!("success delete_article");
     Ok(ResponseMessage {

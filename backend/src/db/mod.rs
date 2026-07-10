@@ -7,7 +7,7 @@ use sqlx::{
     SqlitePool,
     sqlite::{SqliteConnectOptions, SqlitePoolOptions},
 };
-use std::env;
+use std::{env, time::Duration};
 
 // 嵌入种子数据到二进制文件中
 const SEED_SUPERUSER: &str = include_str!("../../seeds/0001_superuser.sql");
@@ -41,7 +41,9 @@ pub async fn new_pool(database_url: &str) -> Result<SqlitePool, sqlx::Error> {
         .connect_with(
             SqliteConnectOptions::new()
                 .filename(&db_path)
-                .create_if_missing(true),
+                .create_if_missing(true)
+                .foreign_keys(true)
+                .busy_timeout(Duration::from_secs(5)),
         )
         .await
 }
@@ -81,4 +83,175 @@ async fn run_seeds(pool: &SqlitePool) -> anyhow::Result<()> {
     tracing::info!("Default superuser created: username=admin");
 
     Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::{
+        models::{article::delete_article_by_id, comment::like_comment_db},
+        routes::comments::LikeCommentPayload,
+    };
+    use std::str::FromStr;
+
+    async fn migrated_pool() -> SqlitePool {
+        let pool = SqlitePoolOptions::new()
+            .max_connections(1)
+            .connect_with(
+                SqliteConnectOptions::from_str("sqlite::memory:")
+                    .unwrap()
+                    .foreign_keys(true),
+            )
+            .await
+            .unwrap();
+
+        sqlx::migrate!("./migrations").run(&pool).await.unwrap();
+        pool
+    }
+
+    async fn insert_article(pool: &SqlitePool, id: &str) {
+        sqlx::query("INSERT INTO articles (id) VALUES (?)")
+            .bind(id)
+            .execute(pool)
+            .await
+            .unwrap();
+    }
+
+    async fn insert_user(pool: &SqlitePool, id: &str, username: &str) {
+        sqlx::query(
+            "INSERT INTO users (id, username, password, identity) VALUES (?, ?, 'hash', 'user')",
+        )
+        .bind(id)
+        .bind(username)
+        .execute(pool)
+        .await
+        .unwrap();
+    }
+
+    async fn insert_comment(
+        pool: &SqlitePool,
+        id: &str,
+        article_id: &str,
+        parent_id: Option<&str>,
+    ) {
+        sqlx::query(
+            r#"
+            INSERT INTO comments (comment_id, article_id, content, created_at, parent_id)
+            VALUES (?, ?, 'content', '2026-01-01T00:00:00Z', ?)
+            "#,
+        )
+        .bind(id)
+        .bind(article_id)
+        .bind(parent_id)
+        .execute(pool)
+        .await
+        .unwrap();
+    }
+
+    async fn count(pool: &SqlitePool, table: &str) -> i64 {
+        let query = format!("SELECT COUNT(*) FROM {table}");
+        sqlx::query_scalar(&query).fetch_one(pool).await.unwrap()
+    }
+
+    #[tokio::test]
+    async fn duplicate_usernames_are_rejected() {
+        let pool = migrated_pool().await;
+        insert_user(&pool, "user-1", "duplicate").await;
+
+        let error = sqlx::query(
+            "INSERT INTO users (id, username, password, identity) VALUES ('user-2', 'duplicate', 'hash', 'user')",
+        )
+        .execute(&pool)
+        .await
+        .unwrap_err();
+
+        assert!(
+            error
+                .as_database_error()
+                .is_some_and(|database_error| database_error.is_unique_violation())
+        );
+    }
+
+    #[tokio::test]
+    async fn deleting_parent_cascades_replies_and_likes() {
+        let pool = migrated_pool().await;
+        insert_article(&pool, "article-1").await;
+        insert_user(&pool, "user-1", "user-1").await;
+        insert_comment(&pool, "parent", "article-1", None).await;
+        insert_comment(&pool, "reply", "article-1", Some("parent")).await;
+
+        for comment_id in ["parent", "reply"] {
+            like_comment_db(
+                &pool,
+                LikeCommentPayload {
+                    comment_id: comment_id.to_string(),
+                },
+                "user-1",
+            )
+            .await
+            .unwrap();
+        }
+
+        let rows_affected = sqlx::query("DELETE FROM comments WHERE comment_id = 'parent'")
+            .execute(&pool)
+            .await
+            .unwrap()
+            .rows_affected();
+
+        assert_eq!(rows_affected, 1);
+        assert_eq!(count(&pool, "comments").await, 0);
+        assert_eq!(count(&pool, "comment_likes").await, 0);
+    }
+
+    #[tokio::test]
+    async fn deleting_article_cascades_comments_and_likes() {
+        let pool = migrated_pool().await;
+        insert_article(&pool, "article-1").await;
+        insert_user(&pool, "user-1", "user-1").await;
+        insert_comment(&pool, "comment-1", "article-1", None).await;
+        like_comment_db(
+            &pool,
+            LikeCommentPayload {
+                comment_id: "comment-1".to_string(),
+            },
+            "user-1",
+        )
+        .await
+        .unwrap();
+
+        delete_article_by_id(&pool, "article-1").await.unwrap();
+
+        assert_eq!(count(&pool, "comments").await, 0);
+        assert_eq!(count(&pool, "comment_likes").await, 0);
+    }
+
+    #[tokio::test]
+    async fn like_toggle_keeps_record_and_count_in_sync() {
+        let pool = migrated_pool().await;
+        insert_article(&pool, "article-1").await;
+        insert_user(&pool, "user-1", "user-1").await;
+        insert_comment(&pool, "comment-1", "article-1", None).await;
+
+        for (expected_result, expected_count) in [("liked", 1_i64), ("unliked", 0_i64)] {
+            let result = like_comment_db(
+                &pool,
+                LikeCommentPayload {
+                    comment_id: "comment-1".to_string(),
+                },
+                "user-1",
+            )
+            .await
+            .unwrap();
+            let like_count: i64 = sqlx::query_scalar(
+                "SELECT like_count FROM comments WHERE comment_id = 'comment-1'",
+            )
+            .fetch_one(&pool)
+            .await
+            .unwrap();
+
+            assert_eq!(result, expected_result);
+            assert_eq!(count(&pool, "comment_likes").await, expected_count);
+            assert_eq!(like_count, expected_count);
+        }
+    }
 }
