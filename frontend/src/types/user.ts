@@ -18,6 +18,12 @@ export interface AuthResponse {
     identity: string;
 }
 
+export interface CurrentUser {
+    id: string;
+    username: string;
+    identity: string;
+}
+
 export const createEmptyComment = (): User => {
     return UserSchema.parse({
         username: "unknown username",

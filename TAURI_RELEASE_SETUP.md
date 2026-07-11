@@ -42,7 +42,6 @@ The workflow is configured in `.github/workflows/tauri-release.yml` and:
 
 ### Windows
 - `.msi` installer
-- `.exe` portable executable
 - `.msi.zip` (updater artifact)
 
 ### macOS
@@ -51,6 +50,7 @@ The workflow is configured in `.github/workflows/tauri-release.yml` and:
 
 ### Linux
 - `.deb` package
+- `.rpm` package
 - `.AppImage` portable application
 - `.AppImage.tar.gz` (updater artifact)
 

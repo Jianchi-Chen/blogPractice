@@ -140,11 +140,15 @@ async fn check_version(app: &AppHandle) -> Result<(), String> {
 
     // 下载并安装
     let mut last_progress = 0;
+    let mut downloaded_bytes = 0_u64;
     let download_result = update
         .download_and_install(
             |downloaded, content_length| {
-                if let Some(total) = content_length {
-                    let progress = ((downloaded as f64 / total as f64) * 100.0).round() as u32;
+                downloaded_bytes = downloaded_bytes.saturating_add(downloaded as u64);
+                if let Some(total) = content_length.filter(|total| *total > 0) {
+                    let progress = (((downloaded_bytes as f64 / total as f64) * 100.0).round()
+                        as u32)
+                        .min(100);
                     // 仅在进度变化时发送，避免刷屏
                     if progress != last_progress {
                         last_progress = progress;

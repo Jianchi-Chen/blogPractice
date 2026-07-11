@@ -10,7 +10,7 @@
 
 ### 1. 配置 GitHub Secrets
 
-前往你的 GitHub 仓库：`https://github.com/Jianchi-Chen/blog/settings/secrets/actions`
+前往你的 GitHub 仓库：`https://github.com/Jianchi-Chen/myBlog/settings/secrets/actions`
 
 点击 **New repository secret**，添加以下两个密钥：
 
@@ -90,7 +90,7 @@ git tag v0.1.1
 git push origin main --tags
 
 # 前往 GitHub Actions 查看构建进度
-# https://github.com/Jianchi-Chen/blog/actions
+# https://github.com/Jianchi-Chen/myBlog/actions
 ```
 
 ---

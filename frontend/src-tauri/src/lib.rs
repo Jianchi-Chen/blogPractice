@@ -26,33 +26,34 @@ pub fn run() {
         .plugin(tauri_plugin_updater::Builder::new().build())
         .setup(|app| {
             log::info!("=== Application Initialization Started ===");
-            
+
             // 加载系统托盘
             load_system_tray(app)?;
             log::info!("System tray loaded successfully");
 
             // 加载配置
-            let config = match Config::load(&app.handle()) {
+            let config = match Config::load(app.handle()) {
                 Ok(cfg) => {
                     log::info!("Configuration loaded successfully");
                     cfg
-                },
+                }
                 Err(e) => {
                     let error_msg = format!("Failed to load configuration: {}", e);
                     eprintln!("{}", error_msg);
                     log::error!("{}", error_msg);
-                    return Err(Box::new(std::io::Error::new(
-                        std::io::ErrorKind::Other,
-                        error_msg,
-                    )));
+                    return Err(Box::new(std::io::Error::other(error_msg)));
                 }
             };
 
-            log::info!("Application config: host={}:{}, jwt_ttl={}s", 
-                config.host, config.port, config.jwt_ttl);
+            log::info!(
+                "Application config: host={}:{}, jwt_ttl={}s",
+                config.host,
+                config.port,
+                config.jwt_ttl
+            );
 
             // 初始化数据库
-            let database_url = config.get_database_path(&app.handle());
+            let database_url = config.get_database_path(app.handle());
             log::info!("Database URL: {}", database_url);
 
             let pool = match tauri::async_runtime::block_on(async {
@@ -62,7 +63,7 @@ pub fn run() {
                     log::error!("{}", msg);
                     msg
                 })?;
-                
+
                 log::info!("Running database migrations...");
                 run_migrations(&pool).await.map_err(|e| {
                     let msg = format!("Failed to run migrations: {}", e);
@@ -85,10 +86,10 @@ pub fn run() {
                 Err(e) => {
                     eprintln!("Database initialization failed: {}", e);
                     log::error!("Database initialization failed: {}", e);
-                    return Err(Box::new(std::io::Error::new(
-                        std::io::ErrorKind::Other,
-                        format!("Database error: {}", e),
-                    )));
+                    return Err(Box::new(std::io::Error::other(format!(
+                        "Database error: {}",
+                        e
+                    ))));
                 }
             };
 

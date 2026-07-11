@@ -19,12 +19,13 @@
                                 article.author_name || "匿名"
                             }}</span>
                             <n-time
-                                :value="article.created_at"
+                                v-if="createdAt"
+                                :time="createdAt"
                                 time-zone="Asia/Shanghai"
-                                format="yyyy-MM-dd hh:mm"
+                                format="yyyy-MM-dd HH:mm"
                             />
                             <n-tag type="success" size="small">{{
-                                tags || "未分类"
+                                article.tags || "未分类"
                             }}</n-tag>
                         </div>
                     </div>
@@ -55,12 +56,8 @@
 import { fetchArticleById } from "@/api/article";
 import CommentSection from "@/components/article/CommentSection.vue";
 import MdPreview from "@/components/article/MdPreview.vue";
-import {
-    ArticleSchema,
-    createEmptyArticle,
-    type Article,
-} from "@/types/article";
-import { computed, onMounted, ref, watchEffect, type Ref } from "vue";
+import { createEmptyArticle, type Article } from "@/types/article";
+import { computed, ref, watch, type Ref } from "vue";
 import { useRoute } from "vue-router";
 import { NCard, NSpace, NAvatar, NTime, NTag, NDivider } from "naive-ui";
 
@@ -71,30 +68,38 @@ const articleId = computed(() => route.params.id as string);
 const article: Ref<Article> = ref(createEmptyArticle());
 const loading = ref(false);
 const error = ref("");
-const tags: Ref<Article["tags"]> = ref("");
+const createdAt = computed(() => {
+    if (!article.value.created_at) return null;
+    const date = new Date(article.value.created_at.replace(/::/g, "-"));
+    return Number.isNaN(date.getTime()) ? null : date;
+});
+let latestLoadRequest = 0;
 
-const loadArticle = async () => {
+const loadArticle = async (id: string) => {
+    const requestId = ++latestLoadRequest;
     loading.value = true;
+    error.value = "";
     try {
-        const res = await fetchArticleById(articleId.value);
-        if (res.data) {
-            tags.value = res.data.tags;
+        const res = await fetchArticleById(id);
+        if (requestId === latestLoadRequest && res.data) {
             article.value = { ...res.data };
         }
-        console.log("加载文章:", article.value.id);
     } catch (err) {
-        error.value = "无法加载文章详情";
+        if (requestId === latestLoadRequest) {
+            error.value = "无法加载文章详情";
+        }
     } finally {
-        loading.value = false;
+        if (requestId === latestLoadRequest) {
+            loading.value = false;
+        }
     }
 };
 
-onMounted(() => {
-    loadArticle();
-});
-
-watchEffect(() => {
-    if (!articleId.value) return;
-    loadArticle();
-});
+watch(
+    articleId,
+    (id) => {
+        if (id) loadArticle(id);
+    },
+    { immediate: true }
+);
 </script>

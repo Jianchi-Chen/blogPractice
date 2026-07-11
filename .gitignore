@@ -29,6 +29,7 @@ Thumbs.db
 # Tauri
 frontend/src-tauri/target/
 backend/target/
+backend/app.db
 
 # Env
 .env

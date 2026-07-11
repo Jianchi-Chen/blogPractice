@@ -23,10 +23,10 @@ pub async fn new_pool(db_url: &str) -> Result<SqlitePool, sqlx::Error> {
             log::info!("Creating database directory: {}", parent.display());
             std::fs::create_dir_all(parent).map_err(|e| {
                 log::error!("Failed to create directory {}: {}", parent.display(), e);
-                sqlx::Error::Io(std::io::Error::new(
-                    std::io::ErrorKind::Other,
-                    format!("Failed to create database directory: {}", e),
-                ))
+                sqlx::Error::Io(std::io::Error::other(format!(
+                    "Failed to create database directory: {}",
+                    e
+                )))
             })?;
             log::info!("Database directory created successfully");
         }
@@ -99,7 +99,7 @@ pub async fn run_seeds(pool: &SqlitePool) -> Result<(), sqlx::Error> {
         })?;
 
     log::info!("Superuser seed executed successfully");
-    log::info!("Default superuser created: username=admin, password=tfF;1J(2WokG,5");
+    log::info!("Default superuser created: username=admin");
 
     Ok(())
 }

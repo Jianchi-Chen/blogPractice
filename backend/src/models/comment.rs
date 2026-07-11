@@ -1,4 +1,4 @@
-use chrono::Local;
+use chrono::Utc;
 use serde::{Deserialize, Serialize};
 use sqlx::{FromRow, SqlitePool};
 use uuid::Uuid;
@@ -34,29 +34,6 @@ pub async fn fetch_comments_by_article_id(
     article_id: &str,
     uid: &str,
 ) -> Result<Vec<CommentWithLike>, sqlx::Error> {
-    // 旧查询评论
-    // let rows = sqlx::query_as!(
-    //     Comment,
-    //     r#"
-    //         SELECT comment_id,
-    //             article_id ,
-    //             user,
-    //             content ,
-    //             created_at,
-    //             parent_id,
-    //             like_count
-    //         FROM comments
-    //         WHERE article_id = $1
-    //     "#,
-    //     id
-    // )
-    // .fetch_all(pool)
-    // .await
-    // .map_err(|e| {
-    //     eprintln!("DB error: {:?}", e);
-    //     e
-    // })?;
-
     let rows = sqlx::query_as::<_, CommentWithLike>(
         r#"
         SELECT  
@@ -96,8 +73,7 @@ pub async fn post_comment_by_article_id(
     username: &str,
 ) -> Result<Comment, sqlx::Error> {
     let c_id = Uuid::now_v7().to_string();
-    let now = Local::now();
-    let create_at = now.format("%Y::%m::%d").to_string();
+    let create_at = Utc::now().to_rfc3339();
 
     let res: Comment = sqlx::query_as::<_, Comment>(
         r#"INSERT INTO comments 
@@ -164,15 +140,17 @@ pub async fn like_comment_db(
     let result = if deleted {
         "unliked"
     } else {
+        let created_at = Utc::now().to_rfc3339();
         let inserted = sqlx::query(
             r#"
             INSERT INTO comment_likes (comment_id, user_id, created_at, article_id)
-            SELECT comment_id, ?, datetime('now'), article_id
+            SELECT comment_id, ?, ?, article_id
             FROM comments
             WHERE comment_id = ?
             "#,
         )
         .bind(user_id)
+        .bind(created_at)
         .bind(comment_id)
         .execute(&mut *transaction)
         .await?;

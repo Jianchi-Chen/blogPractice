@@ -1,6 +1,6 @@
-import type { User } from "@/types/user";
+import type { CurrentUser, User } from "@/types/user";
+import { userStorageKey } from "@/utils/userStorage";
 import { defineStore } from "pinia";
-import { uuidv7 } from "uuidv7";
 
 export const useUserStore = defineStore("user", {
     // state 本身是一个函数，调用useUserStore时会被初始化执行一次
@@ -18,17 +18,19 @@ export const useUserStore = defineStore("user", {
     actions: {
         login(
             token: string,
-            user: {
-                id: string;
-                username: string;
-                identity: string;
-            }
+            user: CurrentUser
         ) {
             this.token = token;
+            localStorage.setItem("token", token);
+            this.updateCurrentUser(user);
+        },
+
+        updateCurrentUser(user: CurrentUser) {
             this.username = user.username;
             this.identity = user.identity;
             this.id = user.id;
-            localStorage.setItem("token", token);
+            this.avatarUrl =
+                localStorage.getItem(userStorageKey(user.id, "avatar")) || "";
             localStorage.setItem("id", user.id);
             localStorage.setItem("username", user.username);
             localStorage.setItem("identity", user.identity);
@@ -39,6 +41,7 @@ export const useUserStore = defineStore("user", {
             this.username = "";
             this.identity = "";
             this.id = "";
+            this.avatarUrl = "";
             localStorage.removeItem("token");
             localStorage.removeItem("username");
             localStorage.removeItem("identity");
@@ -50,15 +53,26 @@ export const useUserStore = defineStore("user", {
             this.username = localStorage.getItem("username") || "";
             this.identity = localStorage.getItem("identity") || "";
             this.id = localStorage.getItem("id") || "";
+            this.avatarUrl = this.id
+                ? localStorage.getItem(userStorageKey(this.id, "avatar")) || ""
+                : "";
+        },
+
+        setAvatar(value: string) {
+            this.avatarUrl = value;
+            if (!this.id) return;
+
+            const key = userStorageKey(this.id, "avatar");
+            if (value) {
+                localStorage.setItem(key, value);
+            } else {
+                localStorage.removeItem(key);
+            }
         },
 
         // 判断当前用户是否是管理员
         isAdmin() {
-            if (this.username === "admin" || this.identity === "admin") {
-                this.identity = "admin";
-                return true;
-            }
-            return false;
+            return this.identity === "admin";
         },
     },
 });

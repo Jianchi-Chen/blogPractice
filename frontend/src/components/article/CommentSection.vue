@@ -41,9 +41,8 @@
 </template>
 
 <script setup lang="ts">
-import { ref, onMounted, onUnmounted, watchEffect } from "vue";
+import { ref, onMounted, onUnmounted, watch } from "vue";
 import { useDialog, NLayout, NCard, NAlert } from "naive-ui";
-import { useUserStore } from "@/stores/user";
 import { useArticleStore } from "@/stores/article";
 import EntryCommentBar from "./EntryCommentBar.vue";
 import CommentItem from "./CommentItem.vue";
@@ -53,10 +52,10 @@ const props = defineProps<{ articleId: string }>();
 
 const commentTitle = ref<HTMLElement | null>(null);
 const isFixed = ref(false);
-const userStore = useUserStore();
 const articleStore = useArticleStore();
 const dialog = useDialog();
 const entryRef = ref<any>(null);
+let observer: IntersectionObserver | undefined;
 
 const {
     comments,
@@ -69,7 +68,7 @@ const {
 
 // 初始化和 DOM observer
 onMounted(() => {
-    const observer = new IntersectionObserver(
+    observer = new IntersectionObserver(
         ([entry]) => {
             isFixed.value = !entry.isIntersecting;
         },
@@ -77,10 +76,9 @@ onMounted(() => {
     );
 
     if (commentTitle.value) observer.observe(commentTitle.value);
-    onUnmounted(() => observer.disconnect());
-
-    if (props.articleId) loadComments(props.articleId);
 });
+
+onUnmounted(() => observer?.disconnect());
 
 const respondComment = (username: string, parent_id: string) => {
     entryRef.value?.setComment?.(`@${username} `, parent_id);
@@ -106,10 +104,13 @@ const confirmDelete = (commentId: string) => {
     });
 };
 
-watchEffect(() => {
-    if (!props.articleId) return;
-    loadComments(props.articleId);
-});
+watch(
+    () => props.articleId,
+    (articleId) => {
+        if (articleId) loadComments(articleId);
+    },
+    { immediate: true }
+);
 </script>
 
 <style scoped>

@@ -1,4 +1,5 @@
 import { useUserStore } from "@/stores/user";
+import { fetchCurrentUser } from "@/api/account";
 import { createRouter, createWebHistory } from "vue-router";
 
 const router = createRouter({
@@ -45,19 +46,25 @@ const router = createRouter({
   ],
 });
 
-// 全局前置守卫：判断是否登录
-// to：即将进入的目标路由对象
-// from：当前导航正要离开的路由对象
-// next()：必须调用，用来决定导航行为
-router.beforeEach((to, _, next) => {
-  // 如果不加()，则user本身是一个函数引用，并不会拿到useUserStore中的值
-  const user = useUserStore();
+// 管理页面以服务端当前用户信息为准，不能信任 localStorage 中的身份字段。
+router.beforeEach(async (to) => {
+  if (!to.meta.requiresAdmin) return true;
 
-  // 即将进入的目标对象具有requireLogin属性，并且user.token里没有任何内容的话，送去/login
-  if (to.meta.requiresAdmin && user.identity !== "admin") {
-    next("/login");
-  } else {
-    next(); // 放行
+  const user = useUserStore();
+  const loginRoute = {
+    name: "Login",
+    query: { redirect: to.fullPath },
+  };
+
+  if (!user.token) return loginRoute;
+
+  try {
+    const response = await fetchCurrentUser();
+    user.updateCurrentUser(response.data);
+    return response.data.identity === "admin" ? true : { name: "home" };
+  } catch {
+    user.logout();
+    return loginRoute;
   }
 });
 

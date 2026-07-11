@@ -42,7 +42,7 @@
   "plugins": {
     "updater": {
       "endpoints": [
-        "https://github.com/Jianchi-Chen/blog/releases/latest/download/latest.json"
+        "https://github.com/Jianchi-Chen/myBlog/releases/latest/download/latest.json"
       ],
       "dialog": false,  // 使用自定义 UI，不弹系统对话框
       "active": true,
@@ -107,9 +107,9 @@ git push origin v1.0.0
 
 | 平台 | 安装包 | 更新包 |
 |------|--------|--------|
-| Windows | `.msi`, `.exe` | `.msi.zip` (签名) |
+| Windows | `.msi` | `.msi.zip` (签名) |
 | macOS | `.dmg`, `.app` | `.app.tar.gz` (签名) |
-| Linux | `.deb`, `.AppImage` | `.AppImage.tar.gz` (签名) |
+| Linux | `.deb`, `.rpm`, `.AppImage` | `.AppImage.tar.gz` (签名) |
 
 ### latest.json 生成
 
@@ -259,7 +259,7 @@ CI/CD 会从 Git tag 中提取版本号并自动更新三个配置文件：
 **解决：** 确保 `.yml` 中包含：
 ```yaml
 includeUpdaterJson: true
-updaterJsonKeepUniversal: false
+updaterJsonKeepUniversal: true
 ```
 
 ### Q3: 更新下载后无法安装

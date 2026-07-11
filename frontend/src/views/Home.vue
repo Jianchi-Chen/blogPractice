@@ -55,7 +55,7 @@ import {
     NLayoutContent,
 } from "naive-ui";
 import { fetchArticles } from "@/api/article";
-import { onMounted, ref, watch, type Ref } from "vue";
+import { computed, onMounted, ref, watch } from "vue";
 import { useRouter } from "vue-router";
 import type { Article } from "@/types/article";
 import { useSearchStore } from "@/stores/search";
@@ -65,32 +65,52 @@ import type { SelectOption } from "naive-ui";
 
 // 文章列表
 const router = useRouter();
-const articles = ref<any[]>([]);
+const allArticles = ref<Article[]>([]);
 const loading = ref(true);
 const message = useMessage();
 const select_value = ref<string[]>([]);
 const search = useSearchStore();
 
-// 筛选项
-const select_options: Ref<SelectOption[]> = ref([]);
+const articles = computed(() => {
+    if (!select_value.value.length) return allArticles.value;
+    return allArticles.value.filter((article) =>
+        select_value.value.includes(article.tags || "Universal")
+    );
+});
+
+// 筛选项始终来自完整结果集，筛选不会破坏原始文章数据。
+const select_options = computed<SelectOption[]>(() =>
+    Array.from(
+        new Set(
+            allArticles.value.map(
+                (article) => article.tags || "Universal"
+            )
+        )
+    )
+        .sort()
+        .map((tag) => ({ label: tag, value: tag }))
+);
+
+let latestLoadRequest = 0;
 
 // 获取文章列表
 const loadArticles = async () => {
+    const requestId = ++latestLoadRequest;
     loading.value = true;
     try {
         const res = await fetchArticles(search.condition);
-        articles.value = res.data.articles; // default is a object
-
-        console.log(articles.value);
-
-        getTags();
+        if (requestId !== latestLoadRequest) return;
+        allArticles.value = res.data.articles;
     } catch (err) {
+        if (requestId !== latestLoadRequest) return;
         message.error("无法加载文章, 请刷新", {
             duration: 0, // 设置为 0 表示永不自动关闭
             closable: true, // 加一个关闭按钮以防无法关闭
         });
     } finally {
-        loading.value = false;
+        if (requestId === latestLoadRequest) {
+            loading.value = false;
+        }
     }
 };
 
@@ -103,47 +123,6 @@ onMounted(() => {
 const goToDetail = (id: number | string) => {
     router.push(`/article/${id}`);
 };
-
-// 获取并且更新标签
-const getTags = () => {
-    // copilot优化，获取tag
-    const tagSet = new Set<string>();
-
-    for (const i of articles.value) {
-        tagSet.add(i.tags);
-    }
-    // sort()升序，map()将每一个tag字符串转换为一个对象
-    select_options.value = Array.from(tagSet)
-        .sort()
-        .map((tag) => ({
-            label: tag,
-            value: tag,
-        }));
-};
-
-// 根据选中标签过滤文章（不在函数内修改 `select_value`，避免触发循环）
-const applyTagFilter = (selected: string[] | undefined) => {
-    const sel = Array.isArray(selected) ? selected.map(String) : [];
-
-    if (!sel.length) {
-        // 未选中任何标签，恢复完整列表
-        loadArticles();
-        return;
-    }
-
-    const newArticles: Article[] = articles.value.filter((a: any) =>
-        sel.includes(String(a.tags))
-    );
-
-    articles.value = newArticles;
-    console.log("筛选后的文章列表: ", articles.value);
-    getTags();
-};
-
-// 监听 select_value 的变化来触发筛选
-watch(select_value, (newVal) => {
-    applyTagFilter(newVal as string[]);
-});
 
 // 仅在搜索条件变更时重新加载文章
 watch(

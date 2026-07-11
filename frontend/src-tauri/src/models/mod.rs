@@ -7,7 +7,6 @@ pub mod comment;
 pub mod search;
 pub mod user;
 
-
 #[derive(Serialize)]
 pub struct ResponseMessage {
     pub message: String,

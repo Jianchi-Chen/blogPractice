@@ -112,7 +112,10 @@ export const toggleStatus = async (id: Article["id"], toggle: string) => {
 };
 
 // 获取建议
-export const fetchSuggestions = async (keyword: string) => {
+export const fetchSuggestions = async (
+    keyword: string,
+    signal?: AbortSignal
+) => {
     const app = useAppStore();
     
     if (app.isTauri) {
@@ -120,7 +123,10 @@ export const fetchSuggestions = async (keyword: string) => {
         return { data };
     }
     
-    return client.get<SuggestionResponse>(`/suggestions/${encodeURIComponent(keyword)}`);
+    return client.get<SuggestionResponse>(
+        `/suggestions/${encodeURIComponent(keyword)}`,
+        { signal }
+    );
 };
 
 // 根据标签获取文章

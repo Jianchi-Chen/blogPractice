@@ -64,7 +64,9 @@
 </template>
 
 <script setup lang="ts">
-import { ref, computed, onMounted } from "vue";
+import { ref, computed, watch } from "vue";
+import { useUserStore } from "@/stores/user";
+import { userStorageKey } from "@/utils/userStorage";
 
 export interface FavoriteArticle {
     id: string;
@@ -78,6 +80,10 @@ export interface FavoriteArticle {
 const loading = ref(true);
 const favorites = ref<FavoriteArticle[]>([]);
 const filter = ref("");
+const userStore = useUserStore();
+const favoritesKey = computed(() =>
+    userStorageKey(userStore.id || "", "favorites")
+);
 
 const sampleData: FavoriteArticle[] = [
     {
@@ -101,16 +107,23 @@ const sampleData: FavoriteArticle[] = [
 
 const loadFavorites = () => {
     loading.value = true;
-    setTimeout(() => {
-        const cached = localStorage.getItem("user_favorites");
+    try {
+        const cached = localStorage.getItem(favoritesKey.value);
         if (cached) {
             favorites.value = JSON.parse(cached);
         } else {
             favorites.value = sampleData;
-            localStorage.setItem("user_favorites", JSON.stringify(sampleData));
+            localStorage.setItem(
+                favoritesKey.value,
+                JSON.stringify(sampleData)
+            );
         }
+    } catch {
+        favorites.value = [];
+        localStorage.removeItem(favoritesKey.value);
+    } finally {
         loading.value = false;
-    }, 600);
+    }
 };
 
 const filteredFavorites = computed(() => {
@@ -134,7 +147,7 @@ const openArticle = (item: FavoriteArticle) => {
 
 const unfavorite = (id: string) => {
     favorites.value = favorites.value.filter((i) => i.id !== id);
-    localStorage.setItem("user_favorites", JSON.stringify(favorites.value));
+    localStorage.setItem(favoritesKey.value, JSON.stringify(favorites.value));
 };
 
 const formatDate = (ts: number) => {
@@ -146,9 +159,7 @@ const formatDate = (ts: number) => {
     );
 };
 
-onMounted(() => {
-    loadFavorites();
-});
+watch(() => userStore.id, loadFavorites, { immediate: true });
 </script>
 
 <style scoped>

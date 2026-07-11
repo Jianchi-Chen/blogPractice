@@ -157,22 +157,22 @@ pub async fn get_current_user(
     let claims = decode_token(&config, &token).map_err(|e| format!("Invalid token: {}", e))?;
 
     // 查询用户信息
-    let user = sqlx::query!(
+    let (id, username, identity) = sqlx::query_as::<_, (String, String, String)>(
         r#"
         SELECT id, username, identity
         FROM users
         WHERE id = ?
         "#,
-        claims.user_id
     )
+    .bind(claims.user_id)
     .fetch_optional(pool.inner())
     .await
     .map_err(|e| format!("Database error: {}", e))?
     .ok_or("User not found")?;
 
     Ok(serde_json::json!({
-        "id": user.id,
-        "username": user.username,
-        "identity": user.identity,
+        "id": id,
+        "username": username,
+        "identity": identity,
     }))
 }

@@ -1,6 +1,6 @@
 //! Article Repository - 文章数据访问层
 
-use chrono::Local;
+use chrono::Utc;
 use serde::{Deserialize, Serialize};
 use sqlx::SqlitePool;
 use uuid::Uuid;
@@ -71,8 +71,7 @@ pub async fn post_article(
     new: &NewArticle,
 ) -> Result<ArticleModel, sqlx::Error> {
     let id = Uuid::now_v7().to_string();
-    let now = Local::now();
-    let create_at = now.format("%Y::%m::%d").to_string();
+    let create_at = Utc::now().to_rfc3339();
     let status = "draft".to_string();
 
     sqlx::query(
@@ -123,8 +122,7 @@ pub async fn put_article_by_id(
     id: &str,
     new: NewArticle,
 ) -> Result<ArticleModel, sqlx::Error> {
-    let now = Local::now();
-    let update_at = now.format("%Y::%m::%d").to_string();
+    let update_at = Utc::now().to_rfc3339();
 
     sqlx::query(
         r#"

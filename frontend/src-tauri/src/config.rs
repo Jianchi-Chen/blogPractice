@@ -81,16 +81,16 @@ impl Config {
         }
 
         let db_path = app_data_dir.join("app.db");
-        
+
         // 统一使用正斜杠，SQLite 在所有平台都支持
         let path_str = db_path
             .to_str()
             .expect("Invalid database path")
             .replace('\\', "/");
-        
+
         let db_url = format!("sqlite://{}", path_str);
         log::info!("Generated database URL: {}", db_url);
-        
+
         db_url
     }
 }

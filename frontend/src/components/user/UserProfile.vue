@@ -94,7 +94,9 @@ import { open } from "@tauri-apps/plugin-dialog";
 import { appDataDir, join } from "@tauri-apps/api/path";
 import { readFile } from "@tauri-apps/plugin-fs";
 import { useMessage } from "naive-ui";
-import { ref, computed } from "vue";
+import { ref, computed, watch } from "vue";
+import { useUserStore } from "@/stores/user";
+import { userStorageKey } from "@/utils/userStorage";
 
 interface UserInfo {
     id: string;
@@ -106,10 +108,10 @@ const props = defineProps<{
 }>();
 
 const message = useMessage();
+const userStore = useUserStore();
 const showAvatarModal = ref(false);
 
-// 头像（base64 URL）
-const avatar = ref(localStorage.getItem("user_avatar") || "");
+const avatar = computed(() => userStore.avatarUrl);
 
 const initials = computed(() => {
     const parts = props.user.name.split(" ");
@@ -119,10 +121,21 @@ const initials = computed(() => {
     return props.user.name.slice(0, 2).toUpperCase();
 });
 
-// 个性签名
-const signature = ref(localStorage.getItem("user_signature") || "");
-const draftSignature = ref(signature.value);
+const signatureKey = computed(() =>
+    userStorageKey(props.user.id, "signature")
+);
+const signature = ref("");
+const draftSignature = ref("");
 const editingSignature = ref(false);
+
+watch(
+    () => props.user.id,
+    () => {
+        signature.value = localStorage.getItem(signatureKey.value) || "";
+        draftSignature.value = signature.value;
+    },
+    { immediate: true }
+);
 
 // 头像选择和上传
 const selectAvatar = async () => {
@@ -165,8 +178,7 @@ const selectAvatar = async () => {
 
         const base64Url = `data:${mimeType};base64,${base64}`;
 
-        avatar.value = base64Url;
-        localStorage.setItem("user_avatar", base64Url);
+        userStore.setAvatar(base64Url);
 
         message.success("头像上传成功！");
     } catch (error: any) {
@@ -176,14 +188,13 @@ const selectAvatar = async () => {
 };
 
 const removeAvatar = () => {
-    avatar.value = "";
-    localStorage.removeItem("user_avatar");
+    userStore.setAvatar("");
 };
 
 // 签名编辑
 const saveSignature = () => {
     signature.value = draftSignature.value.trim();
-    localStorage.setItem("user_signature", signature.value);
+    localStorage.setItem(signatureKey.value, signature.value);
     editingSignature.value = false;
 };
 

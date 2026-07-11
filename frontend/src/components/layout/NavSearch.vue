@@ -48,7 +48,7 @@
 </template>
 
 <script setup lang="ts">
-import { h, onMounted, ref, render, type Ref } from "vue";
+import { onUnmounted, ref, type Ref } from "vue";
 import { NButton, NInput, NIcon } from "naive-ui";
 import { SearchCircleOutline } from "@vicons/ionicons5";
 import { debounce } from "lodash-es";
@@ -71,42 +71,59 @@ const suggestions: Ref<ArticleSuggestion[]> = ref([]);
 const router = useRouter();
 const search = useSearchStore();
 let abortController: AbortController | null = null; // 防抖；取消旧请求
+let latestSuggestionRequest = 0;
 
 // 生成建议项
 const generateSuggestions = debounce(async () => {
     const q = keyword.value.trim();
+    const requestId = ++latestSuggestionRequest;
+    abortController?.abort();
+
     if (!q) {
         suggestions.value = [];
+        loading.value = false;
         return;
     }
-    /* 取消上一次请求 */
-    abortController?.abort();
-    abortController = new AbortController();
+
+    const controller = new AbortController();
+    abortController = controller;
     loading.value = true;
 
     try {
-        const res = await fetchSuggestions(keyword.value);
+        const res = await fetchSuggestions(q, controller.signal);
+        if (requestId !== latestSuggestionRequest || keyword.value.trim() !== q) {
+            return;
+        }
         const data = res.data.item;
-        console.log(res.data);
-
         suggestions.value = data.map((item: any) => ({
-            title: item.title, // ⬅ 使用 render 函数
+            title: item.title,
             id: item.id,
         }));
     } catch (err) {
-        console.error("Failed to fetch suggestions:", err);
+        if (requestId === latestSuggestionRequest && !controller.signal.aborted) {
+            console.error("Failed to fetch suggestions:", err);
+        }
     } finally {
-        loading.value = false;
+        if (requestId === latestSuggestionRequest) {
+            loading.value = false;
+        }
     }
-
-    loading.value = false;
 }, 300);
+
+const cancelSuggestions = () => {
+    latestSuggestionRequest += 1;
+    generateSuggestions.cancel();
+    abortController?.abort();
+    abortController = null;
+    loading.value = false;
+};
 
 /** 切换展开状态 */
 const toggleSearch = () => {
     isExpanded.value = !isExpanded.value;
     // 如果收起，自动清空
     if (!isExpanded.value) {
+        cancelSuggestions();
         keyword.value = "";
         search.setCondition(keyword.value);
         suggestions.value = [];
@@ -123,10 +140,8 @@ const handleInput = () => {
 
 // 回车搜索
 const handleSearch = () => {
-    console.log(keyword.value);
-
-    // TODO 展示具有相关内容的文章
-    search.setCondition(keyword.value);
+    cancelSuggestions();
+    search.setCondition(keyword.value.trim());
     router.push("/");
     showPopover.value = false;
 };
@@ -137,7 +152,12 @@ const handleSelect = (id: string | undefined) => {
         return;
     }
     router.push(`/article/${id}`); //！ 只能跳一次
-    toggleSearch();
-    isExpanded.value = !isExpanded.value;
+    cancelSuggestions();
+    keyword.value = "";
+    suggestions.value = [];
+    showPopover.value = false;
+    isExpanded.value = false;
 };
+
+onUnmounted(cancelSuggestions);
 </script>

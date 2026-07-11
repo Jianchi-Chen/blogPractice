@@ -9,6 +9,7 @@ import naive from "naive-ui";
 import 'vditor/dist/index.css'
 // 通用字体
 import "vfonts/Lato.css";
+import { useUserStore } from "./stores/user";
 
 // msw
 // if (import.meta.env.DEV) {
@@ -19,9 +20,11 @@ import "vfonts/Lato.css";
 // }
 
 const app = createApp(App);
+const pinia = createPinia();
 
 // Piania、Router、Naive-ui
-app.use(createPinia());
+app.use(pinia);
+useUserStore(pinia).initFromStorage();
 app.use(router);
 app.use(naive);
 

@@ -10,12 +10,10 @@ import {
     NLayoutSider,
 } from "naive-ui";
 import type { GlobalTheme } from "naive-ui";
-import { useUserStore } from "./stores/user";
 import { defineComponent, onMounted, onUnmounted, ref } from "vue";
 import Sider from "@/components/layout/Sider.vue";
 import { useArticleStore } from "./stores/article";
 import { BackToTop } from "@vicons/carbon";
-import { useAppStore } from "@/stores/app";
 import { listen } from "@tauri-apps/api/event";
 import { useMessage } from "naive-ui";
 
@@ -25,13 +23,7 @@ type UpdateStatusPayload = {
     message?: string;
 };
 
-// 获取登录状态
-const userStore = useUserStore();
-const appStore = useAppStore();
 const articleStore = useArticleStore();
-onMounted(() => {
-    userStore.initFromStorage();
-});
 
 // 主题色切换, null 等于 light
 const theme = ref<GlobalTheme | null>(null);

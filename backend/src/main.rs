@@ -28,7 +28,7 @@ async fn main() -> anyhow::Result<()> {
         .with(tracing_subscriber::fmt::layer())
         .init();
 
-    let cfg = Config::from_env();
+    let cfg = Config::from_env()?;
     let pool = new_pool(&cfg.database_url).await?;
     run_migrations(&pool).await?;
 

@@ -11,7 +11,7 @@ pub struct User {
     pub identity: String,
 }
 
-#[derive(Debug, Clone, Serialize)]
+#[derive(Debug, Clone, FromRow, Serialize)]
 pub struct UserPublic {
     pub id: String,
     pub username: String,

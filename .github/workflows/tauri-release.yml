@@ -110,13 +110,13 @@ jobs:
 
                   # 根据平台设置不同的 bundle targets
                   if [[ "${{ matrix.platform }}" == "ubuntu-latest" ]]; then
-                      # Linux: deb 和 rpm，移除 AppImage
-                      echo "Configuring Linux bundle targets: deb, rpm"
+                      # Linux: deb、rpm 和用于自动更新的 AppImage
+                      echo "Configuring Linux bundle targets: deb, rpm, appimage"
                       # 使用 jq 或 sed 修改配置（这里用简单的方式，直接添加 targets）
                       cat > bundle_config.json << 'EOF'
                   {
                       "bundle": {
-                          "targets": ["deb", "rpm"]
+                          "targets": ["deb", "rpm", "appimage"]
                       }
                   }
                   EOF
@@ -170,9 +170,9 @@ jobs:
                       - Backend: Rust + SQLite
 
                       **Downloads:**
-                      - Windows: `.msi` installer and `.exe` portable
+                      - Windows: `.msi` installer
                       - macOS: `.dmg` installer and `.app` bundle
-                      - Linux: `.deb`, `.AppImage`
+                      - Linux: `.deb`, `.rpm`, `.AppImage`
 
                       **自动更新支持**: 应用内检查更新功能已启用
                   prerelease: false

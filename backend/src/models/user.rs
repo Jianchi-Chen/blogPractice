@@ -16,7 +16,7 @@ pub struct User {
     pub identity: String,
 }
 
-#[derive(Debug, Clone, Serialize)]
+#[derive(Debug, Clone, FromRow, Serialize)]
 pub struct UserPublic {
     pub id: String,
     pub username: String,
@@ -87,23 +87,12 @@ pub async fn find_user_by_id(pool: &SqlitePool, id: String) -> Result<Option<Use
 
 /// 用户列表
 pub async fn list_users(pool: &SqlitePool, limit: i32) -> Result<Vec<UserPublic>, sqlx::Error> {
-    let rows = sqlx::query!(
+    sqlx::query_as::<_, UserPublic>(
         r#"SELECT id, username, identity FROM users ORDER BY id LIMIT ?"#,
-        limit
     )
+    .bind(limit)
     .fetch_all(pool)
-    .await?;
-
-    let users = rows
-        .into_iter()
-        .map(|row| UserPublic {
-            id: row.id.unwrap_or_default(),
-            username: row.username.unwrap_or_default(),
-            identity: row.identity.unwrap_or_default(),
-        })
-        .collect::<Vec<UserPublic>>();
-
-    Ok(users)
+    .await
 }
 
 /// 通过id删除用户
@@ -120,7 +109,7 @@ pub async fn edit_user_account(
     pool: &SqlitePool,
     new_data: AdminEditAccountPayload,
 ) -> Result<(), sqlx::Error> {
-    sqlx::query!(
+    sqlx::query(
         r#"
             UPDATE users
             SET
@@ -129,11 +118,11 @@ pub async fn edit_user_account(
             identity = COALESCE($3, identity)
             WHERE id = $4
     "#,
-        new_data.edited_username,
-        new_data.edited_password,
-        new_data.edited_identity,
-        new_data.edited_id,
     )
+    .bind(new_data.edited_username)
+    .bind(new_data.edited_password)
+    .bind(new_data.edited_identity)
+    .bind(new_data.edited_id)
     .execute(pool)
     .await?;
 

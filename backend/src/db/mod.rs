@@ -7,7 +7,7 @@ use sqlx::{
     SqlitePool,
     sqlite::{SqliteConnectOptions, SqlitePoolOptions},
 };
-use std::{env, time::Duration};
+use std::{str::FromStr, time::Duration};
 
 // 嵌入种子数据到二进制文件中
 const SEED_SUPERUSER: &str = include_str!("../../seeds/0001_superuser.sql");
@@ -26,21 +26,12 @@ impl AppState {
 
 // 连接数据库
 pub async fn new_pool(database_url: &str) -> Result<SqlitePool, sqlx::Error> {
-    // println!("当前工作目录: {:?}", std::env::current_dir()?);
-    // panic!("{}", database_url);
-    // create_dir(Path::new("test")).unwrap();
-    // File::create(format!("{}", database_url))?;
-
-    let db_file = database_url.strip_prefix("sqlite://").unwrap();
-    let db_path = env::current_dir()?.join(db_file);
-
     // SqliteConnectOptions = 描述“怎么连到某一个数据库”的细粒度参数（文件路径、是否创建、超时、外键开关……）。
     // SqlitePoolOptions = 描述“怎么管理一堆连接”的参数（最大连接数、最小连接数、连接超时、健康检查……）。
     SqlitePoolOptions::new()
         .max_connections(10)
         .connect_with(
-            SqliteConnectOptions::new()
-                .filename(&db_path)
+            SqliteConnectOptions::from_str(database_url)?
                 .create_if_missing(true)
                 .foreign_keys(true)
                 .busy_timeout(Duration::from_secs(5)),
@@ -252,6 +243,16 @@ mod tests {
             assert_eq!(result, expected_result);
             assert_eq!(count(&pool, "comment_likes").await, expected_count);
             assert_eq!(like_count, expected_count);
+
+            if expected_result == "liked" {
+                let created_at: String = sqlx::query_scalar(
+                    "SELECT created_at FROM comment_likes WHERE comment_id = 'comment-1'",
+                )
+                .fetch_one(&pool)
+                .await
+                .unwrap();
+                assert!(chrono::DateTime::parse_from_rfc3339(&created_at).is_ok());
+            }
         }
     }
 }

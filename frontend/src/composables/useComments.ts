@@ -8,6 +8,7 @@ export function useComments() {
     const ifComment = ref(false);
     const message = useMessage();
     const userStore = useUserStore();
+    let latestLoadRequest = 0;
 
     const buildCommentsTree = (commentsData: any) => {
         const map = new Map();
@@ -31,11 +32,14 @@ export function useComments() {
     };
 
     const loadComments = async (articleId: string) => {
+        const requestId = ++latestLoadRequest;
         try {
             const res = await fetchComments(articleId);
+            if (requestId !== latestLoadRequest) return;
             comments.value = buildCommentsTree(res.data.comments);
             ifComment.value = comments.value.length > 0;
         } catch (e) {
+            if (requestId !== latestLoadRequest) return;
             console.error("Error fetching comments:", e);
             message.error("加载评论失败，请稍后重试");
         }

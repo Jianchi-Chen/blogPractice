@@ -93,7 +93,7 @@ const menuOptions = computed(() => {
     ];
 
     if (isLoggedin.value) {
-        if (!localStorage.getItem("user_avatar")) {
+        if (!userstore.avatarUrl) {
             // 根据身份设定颜色
             const username = userstore.username || "G";
             const firstLetter = username.charAt(0).toUpperCase();
@@ -136,7 +136,7 @@ const menuOptions = computed(() => {
                 icon: () =>
                     h(NAvatar, {
                         size: 28,
-                        src: localStorage.getItem("user_avatar") || "",
+                        src: userstore.avatarUrl,
                     }),
             });
         }

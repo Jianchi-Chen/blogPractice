@@ -13,13 +13,12 @@ pub async fn get_suggests_by_keyword(
 ) -> Result<Vec<TmpSuggest>, sqlx::Error> {
     let bind_value = format!("%{}%", params);
 
-    let res = sqlx::query_as!(
-        TmpSuggest,
+    let res = sqlx::query_as::<_, TmpSuggest>(
         r#"
             SELECT id, title FROM articles WHERE status = 'published' AND title LIKE ? 
         "#,
-        bind_value
     )
+    .bind(bind_value)
     .fetch_all(pool)
     .await?;
     tracing::info!("搜索建议结果: {:?}", res);

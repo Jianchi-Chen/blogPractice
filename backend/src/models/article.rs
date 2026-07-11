@@ -1,4 +1,4 @@
-use chrono::Local;
+use chrono::Utc;
 use http::StatusCode;
 use serde::{Deserialize, Serialize};
 use sqlx::{FromRow, SqlitePool};
@@ -98,13 +98,10 @@ pub async fn post_article(
     new: &NewArticle,
 ) -> Result<ArticleModel, sqlx::Error> {
     let id = Uuid::now_v7().to_string();
-    let now = Local::now();
-    let create_at = now.format("%Y::%m::%d").to_string();
+    let create_at = Utc::now().to_rfc3339();
     let status = "draft".to_string();
 
-    // query_as 是 sqlx 的宏：它在 编译期 检查 SQL 语法，并把结果行直接 按列名映射 到你指定的结构体 User。
-    // 第一个类型参数 _ 让编译器推断数据库驱动（这里是 SQLite，只有一种数据库的话可以自己推导）；第二个 User 指定目标结构体。
-    let _ = sqlx::query(
+    sqlx::query(
         // r#"..."# Rust原始字符串(raw string)语法，被包裹内容不会被转义
         r#"
         INSERT INTO articles (id, title, content, summary, created_at, status, tags)
@@ -123,7 +120,7 @@ pub async fn post_article(
     .map_err(|e| {
         eprintln!("DB error: {:?}", e);
         e
-    });
+    })?;
 
     sqlx::query_as::<_, ArticleModel>(r#"SELECT * FROM articles WHERE id = ?"#)
         .bind(&id)
@@ -164,12 +161,9 @@ pub async fn put_article_by_id(
     id: &str,
     new: NewArticle,
 ) -> Result<ArticleModel, AppError> {
-    let now = Local::now();
-    let update_at = now.format("%Y::%m::%d").to_string();
+    let update_at = Utc::now().to_rfc3339();
 
-    // 不带宏是运行期再检查
-    // 使用宏是编译期检查
-    let _ = sqlx::query!(
+    sqlx::query(
         r#"
             UPDATE articles
             SET title = ?,
@@ -180,14 +174,14 @@ pub async fn put_article_by_id(
                 status = ?
             WHERE id = ?
     "#,
-        new.title,
-        new.content,
-        new.summary,
-        update_at,
-        new.tags,
-        "draft",
-        id
     )
+    .bind(new.title)
+    .bind(new.content)
+    .bind(new.summary)
+    .bind(update_at)
+    .bind(new.tags)
+    .bind("draft")
+    .bind(id)
     .execute(pool)
     .await?;
 
