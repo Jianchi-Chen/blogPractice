@@ -80,7 +80,7 @@ import {
 } from "naive-ui";
 import axios from "@/api/client";
 import { useRouter } from "vue-router";
-import { publishArticle, updateArticle } from "@/api/article";
+import { createArticle, updateArticle } from "@/api/articles";
 import type { Article } from "@/types/article";
 import Vditor from "vditor";
 import { tr } from "zod/locales";
@@ -170,7 +170,7 @@ const handleSubmit = async () => {
                 outcomeForm.tags = "Universal";
             }
             message.success("save Successfully");
-            await publishArticle({ ...outcomeForm });
+            await createArticle({ ...outcomeForm });
         }
         emit("done");
         router.push("/admin");

@@ -1,158 +1,230 @@
-//! /users 相关路由：列表（受保护）
-
-use crate::auth::{JwtAuth, hash_password};
-use crate::db::AppState;
-use crate::error::{AppError, AppResult, map_username_write_error};
-use crate::models::user::{UserPublic, delete_user_by_id, edit_user_account, list_users};
-use crate::routes::auth::get_ident_by_id;
-use axum::extract::{Path, Query};
-use axum::{Json, extract::State};
-use http::StatusCode;
+use axum::{
+    Json,
+    body::Body,
+    extract::{Multipart, Path, Query, State},
+    http::{HeaderValue, StatusCode, header},
+    response::{IntoResponse, Response},
+};
 use serde::{Deserialize, Serialize};
 use std::sync::Arc;
 
+use crate::{
+    auth::{Claims, JwtAuth, hash_password, require_admin},
+    db::AppState,
+    error::{AppError, AppResult, map_username_write_error},
+    models::user::{AdminUpdateUser, AvatarData, CurrentUser, UpdateProfileInput, UserPublic},
+    repositories::user::{
+        delete_user_by_id, find_avatar, find_current_user, list_users, remove_avatar, save_avatar,
+        update_signature, update_user,
+    },
+};
+
+const MAX_AVATAR_BYTES: usize = 2 * 1024 * 1024;
+
 #[derive(Serialize)]
-pub struct ListUsersResponse {
-    users: Vec<UserPublic>,
+pub struct UserListResponse {
+    pub users: Vec<UserPublic>,
 }
 
-// HTTP层函数，对外接口
-pub async fn get_users(
+#[derive(Deserialize, Debug)]
+pub struct UserListQuery {
+    pub limit: Option<i32>,
+}
+
+#[derive(Deserialize, Debug)]
+pub struct UpdateUserInput {
+    pub username: Option<String>,
+    pub password: Option<String>,
+    pub identity: Option<String>,
+}
+
+pub async fn list(
     State(state): State<Arc<AppState>>,
-    JwtAuth(auth): JwtAuth,
-    Query(query): Query<UsersQuery>,
-) -> AppResult<Json<ListUsersResponse>> {
-    tracing::info!("Received query: {:?}", query);
-
-    // 验证用户身份
-    if get_ident_by_id(&state.pool, &auth.user_id).await? != "admin" {
-        tracing::warn!("Unauthorized get_users attempt by user: {:?}", auth.user_id);
-        return Err(AppError::Unauthorized("only admin can view users".into()));
-    }
-
-    let default_limit = query.limit.unwrap_or(10);
-
-    let users = list_users(&state.pool, default_limit).await?;
-    tracing::info!("Fetched users: {:?}", users);
-    Ok(Json(ListUsersResponse { users }))
+    JwtAuth(claims): JwtAuth,
+    Query(query): Query<UserListQuery>,
+) -> AppResult<Json<UserListResponse>> {
+    require_admin(&state, &claims).await?;
+    let users = list_users(&state.pool, query.limit.unwrap_or(10)).await?;
+    Ok(Json(UserListResponse { users }))
 }
 
-pub async fn delete_users(
+pub async fn delete(
     State(state): State<Arc<AppState>>,
     Path(user_id): Path<String>,
-    JwtAuth(auth): JwtAuth,
+    JwtAuth(claims): JwtAuth,
 ) -> AppResult<StatusCode> {
-    tracing::info!("Received request to delete user: {:?}", user_id);
-
-    // 验证前端传来的token
-    if get_ident_by_id(&state.pool, &auth.user_id).await? != "admin" {
-        tracing::warn!("Unauthorized delete attempt by user: {:?}", auth.user_id);
-        return Err(crate::error::AppError::Unauthorized(
-            "only admin can delete users".into(),
-        ));
-    }
-
+    require_admin(&state, &claims).await?;
     if user_id == "1" {
         return Err(AppError::BadRequest(
             "cannot delete the superadmin account".into(),
         ));
     }
-
     if delete_user_by_id(&state.pool, &user_id).await? == 0 {
         return Err(AppError::NotFound);
     }
-    tracing::info!("Deleted user: {:?}", user_id);
-
     Ok(StatusCode::NO_CONTENT)
 }
 
-#[derive(Deserialize, Debug)]
-pub struct UsersQuery {
-    pub limit: Option<i32>,
+pub async fn update(
+    State(state): State<Arc<AppState>>,
+    Path(user_id): Path<String>,
+    JwtAuth(claims): JwtAuth,
+    Json(input): Json<UpdateUserInput>,
+) -> AppResult<StatusCode> {
+    update_account(&state, &claims, user_id, input).await
 }
 
-// 编辑用户账号（仅管理员可用）
-pub async fn edit_account(
-    State(state): State<Arc<AppState>>,
-    JwtAuth(auth): JwtAuth,
-    Json(payload): Json<AdminEditAccountPayload>,
+pub(crate) async fn update_account(
+    state: &AppState,
+    claims: &Claims,
+    user_id: String,
+    input: UpdateUserInput,
 ) -> AppResult<StatusCode> {
-    tracing::info!(
-        "AdminEditAccountPayload() Received request to edit account: {:?}",
-        auth.user_id
-    );
+    require_admin(state, claims).await?;
+    let update = prepare_update(user_id, input)?;
+    if update_user(&state.pool, update)
+        .await
+        .map_err(map_username_write_error)?
+        == 0
+    {
+        return Err(AppError::NotFound);
+    }
+    Ok(StatusCode::NO_CONTENT)
+}
 
-    // 仅管理员编辑
-    if get_ident_by_id(&state.pool, &auth.user_id).await? != "admin" {
-        tracing::warn!(
-            "Unauthorized edit attempt by user: {:?}, current identity: {:?}",
-            auth.user_id,
-            payload.edited_identity
-        );
-        return Err(AppError::Unauthorized(
-            "cannot edit other user's account".into(),
+pub async fn update_profile(
+    State(state): State<Arc<AppState>>,
+    JwtAuth(claims): JwtAuth,
+    Json(input): Json<UpdateProfileInput>,
+) -> AppResult<Json<CurrentUser>> {
+    let signature = input.signature.trim();
+    if signature.chars().count() > 120 {
+        return Err(AppError::BadRequest(
+            "signature must not exceed 120 characters".into(),
         ));
     }
+    if update_signature(&state.pool, &claims.user_id, signature).await? == 0 {
+        return Err(AppError::NotFound);
+    }
+    current_user_response(&state, &claims.user_id).await
+}
 
-    if let Some(identity) = payload.edited_identity.as_deref()
+pub async fn upload_avatar(
+    State(state): State<Arc<AppState>>,
+    JwtAuth(claims): JwtAuth,
+    mut multipart: Multipart,
+) -> AppResult<Json<CurrentUser>> {
+    let mut avatar = None;
+    while let Some(field) = multipart
+        .next_field()
+        .await
+        .map_err(|error| AppError::BadRequest(error.to_string()))?
+    {
+        if field.name() != Some("avatar") {
+            continue;
+        }
+        let content_type = field
+            .content_type()
+            .map(str::to_string)
+            .ok_or_else(|| AppError::BadRequest("avatar content type is required".into()))?;
+        let bytes = field
+            .bytes()
+            .await
+            .map_err(|error| AppError::BadRequest(error.to_string()))?;
+        validate_avatar(&content_type, &bytes)?;
+        avatar = Some(AvatarData {
+            bytes: bytes.to_vec(),
+            content_type,
+        });
+        break;
+    }
+
+    let avatar = avatar.ok_or_else(|| AppError::BadRequest("avatar file is required".into()))?;
+    if save_avatar(&state.pool, &claims.user_id, avatar).await? == 0 {
+        return Err(AppError::NotFound);
+    }
+    current_user_response(&state, &claims.user_id).await
+}
+
+pub async fn delete_avatar(
+    State(state): State<Arc<AppState>>,
+    JwtAuth(claims): JwtAuth,
+) -> AppResult<Json<CurrentUser>> {
+    if remove_avatar(&state.pool, &claims.user_id).await? == 0 {
+        return Err(AppError::NotFound);
+    }
+    current_user_response(&state, &claims.user_id).await
+}
+
+pub async fn avatar(
+    State(state): State<Arc<AppState>>,
+    Path(user_id): Path<String>,
+) -> AppResult<Response> {
+    let avatar = find_avatar(&state.pool, &user_id)
+        .await?
+        .ok_or(AppError::NotFound)?;
+    let content_type = HeaderValue::from_str(&avatar.content_type)
+        .map_err(|_| AppError::InternalServerError("invalid avatar content type".into()))?;
+    Ok((
+        [(header::CONTENT_TYPE, content_type)],
+        Body::from(avatar.bytes),
+    )
+        .into_response())
+}
+
+fn prepare_update(user_id: String, input: UpdateUserInput) -> AppResult<AdminUpdateUser> {
+    if let Some(identity) = input.identity.as_deref()
         && !matches!(identity, "admin" | "user" | "visitor")
     {
         return Err(AppError::BadRequest("invalid identity".into()));
     }
-
-    // 超级管理员账号必须始终保留管理员身份。
-    if payload.edited_id == "1"
-        && payload
-            .edited_identity
-            .as_deref()
-            .is_some_and(|identity| identity != "admin")
-    {
-        tracing::warn!("Attempt to demote superadmin by user: {:?}", auth.user_id);
-        return Err(AppError::BadRequest(
-            "cannot change superadmin identity".into(),
-        ));
-    }
-
-    // 将传递的密码转为hash
-    let new_password = if let Some(ref password) = payload.edited_password
-        && !password.is_empty()
-    {
-        match hash_password(password) {
-            Ok(hashed) => Some(hashed),
-            Err(e) => {
-                tracing::warn!(
-                    "failed to hash password in edit account request by user: {:?}, error: {:?}",
-                    auth.user_id,
-                    e
-                );
-                return Err(AppError::InternalServerError(
-                    "failed to hash password".into(),
-                ));
-            }
-        }
-    } else {
-        None
-    };
-    let payload = AdminEditAccountPayload {
-        edited_id: payload.edited_id,
-        edited_username: payload.edited_username,
-        edited_password: new_password,
-        edited_identity: payload.edited_identity,
-    };
-
-    edit_user_account(&state.pool, payload)
-        .await
-        .map_err(map_username_write_error)?;
-
-    tracing::info!("Edited account for user: {:?}", auth.user_id);
-
-    Ok(StatusCode::OK)
+    ensure_superadmin_identity(&user_id, input.identity.as_deref())?;
+    let password = input
+        .password
+        .filter(|password| !password.is_empty())
+        .map(|password| hash_password(&password))
+        .transpose()?;
+    Ok(AdminUpdateUser {
+        user_id,
+        username: input
+            .username
+            .filter(|username| !username.trim().is_empty()),
+        password,
+        identity: input.identity,
+    })
 }
 
-#[derive(Deserialize, Debug)]
-pub struct AdminEditAccountPayload {
-    pub edited_id: String,
-    pub edited_username: Option<String>,
-    pub edited_password: Option<String>,
-    pub edited_identity: Option<String>,
+fn ensure_superadmin_identity(user_id: &str, identity: Option<&str>) -> AppResult<()> {
+    if user_id == "1" && identity.is_some_and(|identity| identity != "admin") {
+        return Err(AppError::BadRequest(
+            "cannot demote the superadmin account".into(),
+        ));
+    }
+    Ok(())
+}
+
+fn validate_avatar(content_type: &str, bytes: &[u8]) -> AppResult<()> {
+    if bytes.is_empty() || bytes.len() > MAX_AVATAR_BYTES {
+        return Err(AppError::BadRequest(
+            "avatar must be between 1 byte and 2 MiB".into(),
+        ));
+    }
+    let valid = match content_type {
+        "image/png" => bytes.starts_with(b"\x89PNG\r\n\x1a\n"),
+        "image/jpeg" => bytes.starts_with(&[0xff, 0xd8, 0xff]),
+        _ => false,
+    };
+    if !valid {
+        return Err(AppError::BadRequest(
+            "only valid PNG and JPEG avatars are supported".into(),
+        ));
+    }
+    Ok(())
+}
+
+async fn current_user_response(state: &AppState, user_id: &str) -> AppResult<Json<CurrentUser>> {
+    find_current_user(&state.pool, user_id)
+        .await?
+        .map(Json)
+        .ok_or(AppError::NotFound)
 }

@@ -65,9 +65,7 @@
 </template>
 
 <script setup lang="ts">
-import { EditAccount, registerAccount } from "@/api/account";
-import { useAppStore } from "@/stores/app";
-import { useUserStore } from "@/stores/user";
+import { updateUser } from "@/api/users";
 import type { EditUserData, User } from "@/types/user";
 import {
     useMessage,
@@ -100,8 +98,6 @@ const modelRef = ref<ModelType>({
     reenteredPassword: "",
 });
 
-const appstore = useAppStore();
-const userstore = useUserStore();
 const loading = ref(false);
 const revisedPassword = ref("false");
 const formRef = ref<FormInst | null>(null);
@@ -175,7 +171,6 @@ const EditUser = async () => {
         await formRef.value?.validate();
 
         let payload: EditUserData = {
-            current_token: userstore.token || "",
             edited_id: props.userdata?.id ? props.userdata.id : "",
             edited_username: modelRef.value.username,
             edited_password: modelRef.value.password
@@ -184,16 +179,7 @@ const EditUser = async () => {
             edited_identity: radio_button_value.value || "user",
         };
         console.log(payload);
-        const res = await EditAccount(payload);
-
-        // Tauri: { data: { message: "done" } }  Web: AxiosResponse with status
-        const isSuccess = appstore.isTauri
-            ? (res.data as any)?.message === "done"
-            : (res as any).status === 200;
-
-        if (!isSuccess) {
-            throw new Error("编辑失败");
-        }
+        await updateUser(payload);
         message.success("编辑成功");
         emit("success");
     } catch (err) {

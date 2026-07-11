@@ -60,8 +60,7 @@
 </template>
 
 <script setup lang="ts">
-import { registerAccount } from "@/api/account";
-import { useAppStore } from "@/stores/app";
+import { register } from "@/api/auth";
 import type { User } from "@/types/user";
 import {
     useMessage,
@@ -89,7 +88,6 @@ const loading = ref(false);
 const formRef = ref<FormInst | null>(null);
 const message = useMessage();
 const radio_button_value: Ref<User["identity"] | null> = ref("user");
-const appstore = useAppStore();
 
 const props = defineProps<{
     show: boolean;
@@ -176,16 +174,7 @@ const createNewUser = async () => {
             password: modelRef.value.password,
             identity: radio_button_value.value || "user",
         };
-        const res = await registerAccount(datamodel);
-
-        // Tauri 和 Web 都返回 { data: ... }，统一检查 data
-        const isSuccess = appstore.isTauri
-            ? (res.data.token as string).length > 0
-            : (res as any).status === 201;
-
-        if (!isSuccess) {
-            throw new Error("注册失败");
-        }
+        await register(datamodel);
         message.success("创建成功");
         emit("success");
     } catch (err) {

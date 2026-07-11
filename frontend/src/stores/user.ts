@@ -1,5 +1,5 @@
 import type { CurrentUser, User } from "@/types/user";
-import { userStorageKey } from "@/utils/userStorage";
+import { resolveApiUrl } from "@/config";
 import { defineStore } from "pinia";
 
 export const useUserStore = defineStore("user", {
@@ -12,6 +12,7 @@ export const useUserStore = defineStore("user", {
         password: "",
         identity: "", // 当前用户身份
         avatarUrl: "", // 用户头像 URL
+        signature: "",
     }),
 
     // 全局行为函数
@@ -29,8 +30,8 @@ export const useUserStore = defineStore("user", {
             this.username = user.username;
             this.identity = user.identity;
             this.id = user.id;
-            this.avatarUrl =
-                localStorage.getItem(userStorageKey(user.id, "avatar")) || "";
+            this.avatarUrl = resolveApiUrl(user.avatar_url);
+            this.signature = user.signature;
             localStorage.setItem("id", user.id);
             localStorage.setItem("username", user.username);
             localStorage.setItem("identity", user.identity);
@@ -42,6 +43,7 @@ export const useUserStore = defineStore("user", {
             this.identity = "";
             this.id = "";
             this.avatarUrl = "";
+            this.signature = "";
             localStorage.removeItem("token");
             localStorage.removeItem("username");
             localStorage.removeItem("identity");
@@ -53,21 +55,16 @@ export const useUserStore = defineStore("user", {
             this.username = localStorage.getItem("username") || "";
             this.identity = localStorage.getItem("identity") || "";
             this.id = localStorage.getItem("id") || "";
-            this.avatarUrl = this.id
-                ? localStorage.getItem(userStorageKey(this.id, "avatar")) || ""
-                : "";
+            this.avatarUrl = "";
+            this.signature = "";
         },
 
         setAvatar(value: string) {
             this.avatarUrl = value;
-            if (!this.id) return;
+        },
 
-            const key = userStorageKey(this.id, "avatar");
-            if (value) {
-                localStorage.setItem(key, value);
-            } else {
-                localStorage.removeItem(key);
-            }
+        setSignature(value: string) {
+            this.signature = value;
         },
 
         // 判断当前用户是否是管理员

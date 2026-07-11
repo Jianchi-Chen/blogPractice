@@ -1,4 +1,4 @@
-import z, { boolean } from "zod";
+import z from "zod";
 
 export const CommentSchema = z.object({
     id: z.string().optional(),
@@ -14,13 +14,13 @@ export type Comment = z.infer<typeof CommentSchema>;
 
 export interface ApiComment {
     comment_id: string;
-    article_id?: string;
-    user?: string;
-    content?: string;
-    created_at?: string;
-    parent_id?: string;
-    like_count?: number;
-    liked_by_me?: number;
+    article_id?: string | null;
+    user?: string | null;
+    content?: string | null;
+    created_at?: string | null;
+    parent_id?: string | null;
+    like_count: number | null;
+    liked_by_me: number | null;
 }
 
 export interface CommentsResponse {
@@ -29,7 +29,8 @@ export interface CommentsResponse {
 
 export interface CommentLikeResponse {
     comment_id: string;
-    like_or_unlike: "liked" | "unliked";
+    liked_by_me: boolean;
+    like_count: number;
 }
 
 export const createEmptyComment = (): Comment => {

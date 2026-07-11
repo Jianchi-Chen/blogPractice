@@ -12,10 +12,9 @@
 <script setup lang="ts">
 import { NDataTable, NButton, NTag, useDialog, useMessage } from "naive-ui";
 import type { DataTableBaseColumn, DataTableSortState } from "naive-ui";
-import { deleteUser as deleteUserApi } from "@/api/account";
+import { deleteUser as deleteUserApi } from "@/api/users";
 import { h, ref } from "vue";
 import type { User } from "@/types/user";
-import { useAppStore } from "@/stores/app";
 
 interface UserRowData {
     id: string;
@@ -37,7 +36,6 @@ const emit = defineEmits<{
 const dialog = useDialog();
 const message = useMessage();
 const tableRef = ref();
-const appstore = useAppStore();
 
 // 用户管理表格列
 const columns = ref<DataTableBaseColumn<UserRowData>[]>([
@@ -127,17 +125,9 @@ const handleDelete = async (id: User["id"]) => {
                 return;
             }
             try {
-                const res = await deleteUserApi(id);
-                if (
-                    appstore.isTauri
-                        ? (res.data as any).message === "done"
-                        : (res as any).status === 204
-                ) {
-                    message.success("用户删除成功");
-                    emit("refresh");
-                } else {
-                    message.error("用户删除失败");
-                }
+                await deleteUserApi(id);
+                message.success("用户删除成功");
+                emit("refresh");
             } catch (error) {
                 message.error("请求出错，无法删除用户");
             }

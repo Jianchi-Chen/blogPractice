@@ -22,47 +22,8 @@ serde_json = "1.0"
 serde = { version = "1.0", features = ["derive"] }
 log = "0.4"
 tauri = { version = "2.9.2", features = [
-    "protocol-asset",
     "tray-icon",
     "image-png",
 ] }
 tauri-plugin-log = "2"
-tauri-plugin-fs = "2"
-tauri-plugin-dialog = "2"
-
-# 实用
-anyhow = "1"
-thiserror = "1"
-dotenvy = "0.15"
-chrono = { version = "0.4", features = ["serde"] }
-uuid = { version = "1", features = ["v4", "v7", "serde"] }
-
-# 数据库 / 迁移
-sqlx = { version = "0.8", features = [
-    "runtime-tokio-rustls",
-    "sqlite",
-    "chrono",
-    "migrate",
-    "uuid",
-    "macros",
-] }
-
-# 鉴权 / 密码哈希
-rand = "0.8"
-# rand_core = "0.6.4"
-jsonwebtoken = "9"
-argon2 = { version = "0.5", features = ["std"] }
-password-hash = "0.5"
-
-# 异步运行时
-tokio = { version = "1", features = ["full"] }
-async-trait = "0.1"
-
-# HTTP 客户端
-reqwest = { version = "0.12", features = ["json"] }
-
-# 日志
-tracing = "0.1"
-tracing-subscriber = { version = "0.3", features = ["env-filter"] }
 tauri-plugin-updater = "2.9.0"
-tauri-plugin-process = "2.3.1"

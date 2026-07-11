@@ -41,7 +41,7 @@
 import { useUserStore } from "@/stores/user";
 import { ref, watchEffect, nextTick } from "vue";
 import { useMessage, type FormInst } from "naive-ui";
-import { postComment } from "@/api/comment";
+import { createComment } from "@/api/comments";
 
 const props = defineProps<{
     articleId: string;
@@ -78,10 +78,9 @@ const submitComment = async () => {
     loading.value = true;
     try {
         await formRef.value?.validate();
-        await postComment(
+        await createComment(
             props.articleId,
             formData.value.newComment,
-            userStore.username,
             commentParentId.value ? commentParentId.value : undefined
         );
         message.success("评论成功");

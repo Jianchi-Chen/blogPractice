@@ -1,176 +1,146 @@
-use std::sync::Arc;
-
 use axum::{
     Json,
     extract::{Path, State},
+    http::StatusCode,
 };
-use serde::{Deserialize, Serialize};
+use serde::Serialize;
+use std::sync::Arc;
 
 use crate::{
-    auth::{JwtAuth, MaybeJwtAuth},
+    auth::{Claims, JwtAuth, MaybeJwtAuth, is_admin, require_admin},
     db::AppState,
     error::{AppError, AppResult},
-    models::{
-        article::find_article_by_id,
-        comment::{
-            Comment, CommentWithLike, delete_comment_by_comment_id, fetch_comments_by_article_id,
-            like_comment_db, post_comment_by_article_id,
-        },
-        user::find_user_by_id,
+    models::comment::{
+        Comment, CommentLikeState, CommentWithLike, CreateCommentInput, SetCommentLikeInput,
     },
-    routes::auth::get_ident_by_id,
+    repositories::{
+        article::find_article_by_id,
+        comment::{create_comment, delete_comment_by_id, list_comments, set_comment_like},
+        user::{find_user_by_id, get_identity},
+    },
 };
 
-#[derive(Serialize, Deserialize)]
-pub struct CommentsResponse {
+#[derive(Serialize)]
+pub struct CommentListResponse {
     pub comments: Vec<CommentWithLike>,
 }
 
-#[derive(Serialize, Deserialize, Debug)]
-pub struct CommentIncome {
-    pub article_id: String,
-    pub user_id: Option<String>,
-    pub content: String,
-    pub parent_id: Option<String>,
-}
-
-#[derive(Serialize, Deserialize, Clone)]
-pub struct DeleteCommentParams {
-    pub comment_id: String,
-    // pub article_id: String,
-    pub message: Option<String>,
-}
-
-#[derive(Serialize, Deserialize, Clone)]
-#[warn(non_snake_case)]
-pub struct LikeCommentPayload {
-    pub comment_id: String,
-}
-
-#[derive(Serialize)]
-pub struct CommentsLikeResponse {
-    pub comment_id: String,
-    pub like_or_unlike: String,
-}
-
-/// 获取评论
-pub async fn handle_get_comments(
+pub async fn list(
     State(state): State<Arc<AppState>>,
-    Path(arti_id): Path<String>,
-    MaybeJwtAuth(maybe_auth): MaybeJwtAuth,
-) -> AppResult<Json<CommentsResponse>> {
-    tracing::info!("Fetching comments for article ID: {:?}", arti_id);
-
-    let arti_id = match find_article_by_id(&state.pool, &arti_id).await? {
-        Some(v) => v.id,
-        None => return Err(AppError::BadRequest("未找到文章".into())),
-    };
-
-    // 获取用户ID（如果有token）
-    let user_id = maybe_auth.map(|claims| claims.user_id).unwrap_or_default();
-
-    let res = fetch_comments_by_article_id(&state.pool, &arti_id, &user_id).await?;
-
-    Ok(Json(CommentsResponse { comments: res }))
+    Path(article_id): Path<String>,
+    MaybeJwtAuth(auth): MaybeJwtAuth,
+) -> AppResult<Json<CommentListResponse>> {
+    let user_id = auth
+        .as_ref()
+        .map(|claims| claims.user_id.as_str())
+        .unwrap_or_default();
+    ensure_article_visible(&state, &article_id, user_id).await?;
+    let comments = list_comments(&state.pool, &article_id, user_id).await?;
+    Ok(Json(CommentListResponse { comments }))
 }
 
-/// 发表评论
-// 有个坑，jwt如果放在后面，axum提取器可能不会识别从而报错
-pub async fn handle_post_comment(
+pub async fn create(
     State(state): State<Arc<AppState>>,
-    JwtAuth(auth): JwtAuth,
-    Json(payload): Json<CommentIncome>,
-) -> AppResult<Json<Comment>> {
-    let user = find_user_by_id(&state.pool, auth.user_id)
+    JwtAuth(claims): JwtAuth,
+    Path(article_id): Path<String>,
+    Json(input): Json<CreateCommentInput>,
+) -> AppResult<(StatusCode, Json<Comment>)> {
+    let comment = create_for_article(&state, &claims, &article_id, input).await?;
+    Ok((StatusCode::CREATED, Json(comment)))
+}
+
+pub(crate) async fn create_for_article(
+    state: &AppState,
+    claims: &Claims,
+    article_id: &str,
+    input: CreateCommentInput,
+) -> AppResult<Comment> {
+    ensure_article_visible(state, article_id, &claims.user_id).await?;
+    validate_comment(&input)?;
+    let user = find_user_by_id(&state.pool, &claims.user_id)
         .await?
-        .ok_or_else(|| AppError::Unauthorized("用户不存在".into()))?;
+        .ok_or_else(|| AppError::Unauthorized("user does not exist".into()))?;
     if user.identity == "visitor" {
-        tracing::info!("游客身份,禁止评论,当前用户身份: {}", user.identity);
-        return Err(AppError::Unauthorized("未登录".into()));
+        return Err(AppError::Forbidden);
     }
-    let username = user.username;
-
-    let res = if (find_article_by_id(&state.pool, &payload.article_id).await?).is_some() {
-        post_comment_by_article_id(&state.pool, payload, &username).await?
-    } else {
-        return Err(AppError::BadRequest("未找到文章".into()));
-    };
-    tracing::info!("用户 {} 发表评论 {:?} 成功", username, res.content.clone());
-    Ok(Json(res))
+    create_comment(&state.pool, article_id, input, &user.username)
+        .await
+        .map_err(AppError::Sqlx)
 }
 
-/// 删除评论
-pub async fn handle_delete_comment(
+pub async fn delete(
     State(state): State<Arc<AppState>>,
-    JwtAuth(auth): JwtAuth,
+    JwtAuth(claims): JwtAuth,
     Path(comment_id): Path<String>,
-) -> AppResult<Json<DeleteCommentParams>> {
-    if get_ident_by_id(&state.pool, &auth.user_id).await? != "admin" {
-        return Err(AppError::Unauthorized("权限不足".into()));
-    };
+) -> AppResult<StatusCode> {
+    delete_by_id(&state, &claims, &comment_id).await
+}
 
-    if delete_comment_by_comment_id(&state.pool, &comment_id).await? == 0 {
+pub(crate) async fn delete_by_id(
+    state: &AppState,
+    claims: &Claims,
+    comment_id: &str,
+) -> AppResult<StatusCode> {
+    require_admin(state, claims).await?;
+    if delete_comment_by_id(&state.pool, comment_id).await? == 0 {
         return Err(AppError::NotFound);
     }
-
-    let res = DeleteCommentParams {
-        comment_id,
-        message: Some("deletion operation completed".to_string()),
-    };
-
-    Ok(Json(res))
+    Ok(StatusCode::NO_CONTENT)
 }
 
-// 点赞评论
-pub async fn like_comment(
+pub async fn set_like(
     State(state): State<Arc<AppState>>,
-    JwtAuth(auth): JwtAuth,
-    Json(payload): Json<LikeCommentPayload>,
-) -> AppResult<Json<CommentsLikeResponse>> {
-    tracing::info!(
-        "trying to like comment with ID: {:?} by user ID: {:?}",
-        &payload.comment_id,
-        auth.user_id
-    );
-    // 权限检查
-    if (find_user_by_id(&state.pool, auth.user_id.clone()).await?).is_some() {
-    } else {
-        return Err(AppError::BadRequest("用户不存在，无法点赞".into()));
-    }
-    let ident = get_ident_by_id(&state.pool, &auth.user_id).await?;
-    if ident != "admin" && ident != "user" {
-        return Err(AppError::Unauthorized("权限不足，无法点赞".into()));
-    }
+    JwtAuth(claims): JwtAuth,
+    Path(comment_id): Path<String>,
+    Json(input): Json<SetCommentLikeInput>,
+) -> AppResult<Json<CommentLikeState>> {
+    ensure_can_interact(&state, &claims.user_id).await?;
+    set_comment_like(&state.pool, &comment_id, &claims.user_id, input.liked)
+        .await
+        .map(Json)
+        .map_err(map_row_not_found)
+}
 
-    let res = like_comment_db(&state.pool, payload.clone(), &auth.user_id)
+async fn ensure_article_visible(
+    state: &AppState,
+    article_id: &str,
+    user_id: &str,
+) -> AppResult<()> {
+    let article = find_article_by_id(&state.pool, article_id)
+        .await?
+        .ok_or(AppError::NotFound)?;
+    if article.status.as_deref() != Some("published")
+        && (user_id.is_empty() || !is_admin(state, user_id).await?)
+    {
+        return Err(AppError::NotFound);
+    }
+    Ok(())
+}
+
+pub(crate) async fn ensure_can_interact(state: &AppState, user_id: &str) -> AppResult<()> {
+    let identity = get_identity(&state.pool, user_id)
         .await
         .map_err(|error| match error {
-            sqlx::Error::RowNotFound => AppError::NotFound,
-            error => AppError::Sqlx(error),
+            sqlx::Error::RowNotFound => AppError::Unauthorized("user does not exist".into()),
+            other => AppError::Sqlx(other),
         })?;
-
-    tracing::info!("Like or unlike comment successfully: {:?}", res);
-
-    Ok(Json(CommentsLikeResponse {
-        comment_id: payload.comment_id,
-        like_or_unlike: res,
-    }))
+    if matches!(identity.as_str(), "admin" | "user") {
+        Ok(())
+    } else {
+        Err(AppError::Forbidden)
+    }
 }
 
-// todo 也许这是不需要的接口
-// 获取评论点赞情况
-// pub async fn get_comments_like(
-//     State(state): State<Arc<AppState>>,
-//     Query(article_id): Query<CommentsQuery>,
-// ) -> AppResult<Json<Vec<LikeCommentPayload>>> {
-//     tracing::info!(
-//         "trying to fetch comments like for article ID: {:?}",
-//         article_id
-//     );
+fn validate_comment(input: &CreateCommentInput) -> AppResult<()> {
+    if input.content.trim().is_empty() {
+        return Err(AppError::BadRequest("comment content is required".into()));
+    }
+    Ok(())
+}
 
-//     let res = get_comments_liked_db(&state.pool, &article_id.article_id).await?;
-
-//     tracing::info!("Fetched comments like successfully");
-
-//     Ok(Json(res))
-// }
+pub(crate) fn map_row_not_found(error: sqlx::Error) -> AppError {
+    match error {
+        sqlx::Error::RowNotFound => AppError::NotFound,
+        other => AppError::Sqlx(other),
+    }
+}

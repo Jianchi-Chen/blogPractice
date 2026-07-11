@@ -53,14 +53,14 @@ import { NButton, NInput, NIcon } from "naive-ui";
 import { SearchCircleOutline } from "@vicons/ionicons5";
 import { debounce } from "lodash-es";
 import { useRouter } from "vue-router";
-import { fetchSuggestions } from "@/api/article";
+import { getArticleSuggestions } from "@/api/articles";
 import type { ArticleSuggestion } from "@/types/article";
 import { useSearchStore } from "@/stores/search";
 
 /**
  * 1. isExpanded 控制搜索框展开/收起
  * 2. keyword 实时收集用户输入
- * 3. 搜索后通过 emit 把结果抛给父组件
+ * 3. 搜索提交写入共享 store，由文章列表发起请求
  */
 
 const showPopover = ref(false);
@@ -88,19 +88,21 @@ const generateSuggestions = debounce(async () => {
     const controller = new AbortController();
     abortController = controller;
     loading.value = true;
+    suggestions.value = [];
 
     try {
-        const res = await fetchSuggestions(q, controller.signal);
+        const res = await getArticleSuggestions(q, controller.signal);
         if (requestId !== latestSuggestionRequest || keyword.value.trim() !== q) {
             return;
         }
-        const data = res.data.item;
+        const data = res.data.items;
         suggestions.value = data.map((item: any) => ({
             title: item.title,
             id: item.id,
         }));
     } catch (err) {
         if (requestId === latestSuggestionRequest && !controller.signal.aborted) {
+            suggestions.value = [];
             console.error("Failed to fetch suggestions:", err);
         }
     } finally {
@@ -125,7 +127,7 @@ const toggleSearch = () => {
     if (!isExpanded.value) {
         cancelSuggestions();
         keyword.value = "";
-        search.setCondition(keyword.value);
+        search.submit("");
         suggestions.value = [];
         showPopover.value = false;
     }
@@ -141,7 +143,7 @@ const handleInput = () => {
 // 回车搜索
 const handleSearch = () => {
     cancelSuggestions();
-    search.setCondition(keyword.value.trim());
+    search.submit(keyword.value.trim());
     router.push("/");
     showPopover.value = false;
 };

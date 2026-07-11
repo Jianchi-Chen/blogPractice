@@ -54,7 +54,7 @@ import {
     NLayout,
     NLayoutContent,
 } from "naive-ui";
-import { fetchArticles } from "@/api/article";
+import { getArticles } from "@/api/articles";
 import { computed, onMounted, ref, watch } from "vue";
 import { useRouter } from "vue-router";
 import type { Article } from "@/types/article";
@@ -98,11 +98,12 @@ const loadArticles = async () => {
     const requestId = ++latestLoadRequest;
     loading.value = true;
     try {
-        const res = await fetchArticles(search.condition);
+        const res = await getArticles(search.condition);
         if (requestId !== latestLoadRequest) return;
         allArticles.value = res.data.articles;
     } catch (err) {
         if (requestId !== latestLoadRequest) return;
+        allArticles.value = [];
         message.error("无法加载文章, 请刷新", {
             duration: 0, // 设置为 0 表示永不自动关闭
             closable: true, // 加一个关闭按钮以防无法关闭
@@ -126,8 +127,9 @@ const goToDetail = (id: number | string) => {
 
 // 仅在搜索条件变更时重新加载文章
 watch(
-    () => search.condition,
+    () => search.requestRevision,
     () => {
+        select_value.value = [];
         loadArticles();
     }
 );

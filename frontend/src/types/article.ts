@@ -25,12 +25,12 @@ export interface ArticleListResponse {
 }
 
 export interface ArticleSuggestion {
-  id?: string;
-  title?: string;
+  id: string;
+  title: string;
 }
 
 export interface SuggestionResponse {
-  item: ArticleSuggestion[];
+  items: ArticleSuggestion[];
 }
 
 // 初始化Article

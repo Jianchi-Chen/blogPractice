@@ -1,5 +1,5 @@
 import { useUserStore } from "@/stores/user";
-import { fetchCurrentUser } from "@/api/account";
+import { getCurrentUser } from "@/api/auth";
 import { createRouter, createWebHistory } from "vue-router";
 
 const router = createRouter({
@@ -11,9 +11,14 @@ const router = createRouter({
       component: () => import("@/views/Home.vue"),
     },
     {
+      path: "/profile",
+      name: "Profile",
+      meta: { requiresAuth: true },
+      component: () => import("@/views/ProfileView.vue"),
+    },
+    {
       path: "/username",
-      name: "userhome",
-      component: () => import("@/views/UserHome.vue"),
+      redirect: "/profile",
     },
     {
       path: "/article/:id",
@@ -48,7 +53,7 @@ const router = createRouter({
 
 // 管理页面以服务端当前用户信息为准，不能信任 localStorage 中的身份字段。
 router.beforeEach(async (to) => {
-  if (!to.meta.requiresAdmin) return true;
+  if (!to.meta.requiresAdmin && !to.meta.requiresAuth) return true;
 
   const user = useUserStore();
   const loginRoute = {
@@ -59,9 +64,12 @@ router.beforeEach(async (to) => {
   if (!user.token) return loginRoute;
 
   try {
-    const response = await fetchCurrentUser();
+    const response = await getCurrentUser();
     user.updateCurrentUser(response.data);
-    return response.data.identity === "admin" ? true : { name: "home" };
+    if (to.meta.requiresAdmin && response.data.identity !== "admin") {
+      return { name: "home" };
+    }
+    return true;
   } catch {
     user.logout();
     return loginRoute;

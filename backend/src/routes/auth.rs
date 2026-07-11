@@ -2,14 +2,14 @@
 //! 说明：演示如何组合 models + auth + error + state
 
 use crate::auth::{
-    MaybeJwtAuth, decode_token, generate_token, hash_password, require_admin, verify_password,
+    JwtAuth, MaybeJwtAuth, generate_token, hash_password, require_admin, verify_password,
 };
 use crate::db::AppState;
 use crate::error::{AppError, AppResult, map_username_write_error};
-use crate::models::user::{NewUser, find_user_by_id, find_user_by_username, insert_common_user};
+use crate::models::user::{CurrentUser, NewUser};
+use crate::repositories::user::{find_current_user, find_user_by_username, insert_user};
 use axum::{Json, extract::State, http::StatusCode};
 use serde::{Deserialize, Serialize};
-use sqlx::SqlitePool;
 use std::sync::Arc;
 
 #[derive(Deserialize, Clone)]
@@ -79,7 +79,7 @@ pub async fn register(
         password: password_hash,
         identity: identity.clone(),
     };
-    let user = insert_common_user(&state.pool, &new)
+    let user = insert_user(&state.pool, &new)
         .await
         .map_err(map_username_write_error)?;
     let token = generate_token(&state, user.id.clone(), &user.username)?;
@@ -129,79 +129,13 @@ pub async fn login(
     }))
 }
 
-// 身份验证
-pub async fn get_ident_by_id(pool: &SqlitePool, id: &str) -> Result<String, sqlx::Error> {
-    let ident = match find_user_by_id(pool, id.to_string()).await? {
-        Some(v) => {
-            tracing::warn!("found user by id: {}, identity: {}", id, v.identity);
-            v.identity
-        }
-        None => {
-            tracing::warn!("can't find user by id: {}", id);
-            "visitor".to_string()
-        }
-    };
-    Ok(ident)
-}
-
-/// 验证 token
-#[derive(Deserialize)]
-pub struct VerifyTokenRequest {
-    pub token: String,
-}
-
-#[derive(Serialize)]
-pub struct VerifyTokenResponse {
-    pub user_id: String,
-    pub message: String,
-    pub exp: usize,
-    pub iat: usize,
-}
-
-pub async fn verify_token(
+/// Canonical current-user endpoint. The bearer token is the only credential source.
+pub async fn current_user(
     State(state): State<Arc<AppState>>,
-    Json(payload): Json<VerifyTokenRequest>,
-) -> AppResult<Json<VerifyTokenResponse>> {
-    let claims = decode_token(&state, &payload.token)
-        .map_err(|_| AppError::Unauthorized("Invalid token".into()))?;
-
-    Ok(Json(VerifyTokenResponse {
-        user_id: claims.user_id,
-        message: claims.message,
-        exp: claims.exp,
-        iat: claims.iat,
-    }))
-}
-
-/// 获取当前用户信息
-#[derive(Deserialize)]
-pub struct GetCurrentUserRequest {
-    pub token: String,
-}
-
-#[derive(Serialize)]
-pub struct GetCurrentUserResponse {
-    pub id: String,
-    pub username: String,
-    pub identity: String,
-}
-
-pub async fn get_current_user(
-    State(state): State<Arc<AppState>>,
-    Json(payload): Json<GetCurrentUserRequest>,
-) -> AppResult<Json<GetCurrentUserResponse>> {
-    // 验证 token
-    let claims = decode_token(&state, &payload.token)
-        .map_err(|_| AppError::Unauthorized("Invalid token".into()))?;
-
-    // 查询用户信息
-    let user = find_user_by_id(&state.pool, claims.user_id)
+    JwtAuth(claims): JwtAuth,
+) -> AppResult<Json<CurrentUser>> {
+    let user = find_current_user(&state.pool, &claims.user_id)
         .await?
-        .ok_or_else(|| AppError::NotFound)?;
-
-    Ok(Json(GetCurrentUserResponse {
-        id: user.id,
-        username: user.username,
-        identity: user.identity,
-    }))
+        .ok_or(AppError::NotFound)?;
+    Ok(Json(user))
 }

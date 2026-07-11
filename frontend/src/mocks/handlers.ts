@@ -1,5 +1,5 @@
 // src/mocks/handlers.ts 定义 mock 接口
-import { fetchArticles } from "@/api/article";
+import { getArticles } from "@/api/articles";
 import { ArticleSchema, type Article } from "@/types/article";
 import { http, HttpResponse } from "msw";
 import { error } from "naive-ui/es/_utils/naive/warn";

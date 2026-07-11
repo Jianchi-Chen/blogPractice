@@ -23,7 +23,11 @@ const { id, status } = defineProps<{ id: Article["id"]; status: string }>();
 const emit = defineEmits<{
     (e: "edit", id: Article["id"]): void;
     (e: "delete", id: Article["id"]): void;
-    (e: "toggleStatus", id: Article["id"], toggle: string): void;
+    (
+        e: "toggleStatus",
+        id: Article["id"],
+        status: "draft" | "published" | "archived"
+    ): void;
 }>();
 
 const statusMap: Record<string, { label: string; type: TagProps["type"] }> = {

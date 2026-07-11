@@ -4,16 +4,9 @@
 //! - 建立数据库连接并执行迁移
 //! - 构建路由并启动 HTTP 服务器
 
-mod auth;
-mod config;
-mod db;
-mod error;
-mod models;
-mod routes;
-
-use crate::config::Config;
-use crate::db::{AppState, new_pool, run_migrations};
-use crate::routes::create_router;
+use backend::config::Config;
+use backend::create_router;
+use backend::db::{AppState, new_pool, run_migrations};
 use std::net::SocketAddr;
 use std::sync::Arc;
 use tracing_subscriber::{layer::SubscriberExt, util::SubscriberInitExt};

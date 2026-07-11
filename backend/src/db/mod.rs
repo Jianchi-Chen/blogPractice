@@ -79,10 +79,7 @@ async fn run_seeds(pool: &SqlitePool) -> anyhow::Result<()> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::{
-        models::{article::delete_article_by_id, comment::like_comment_db},
-        routes::comments::LikeCommentPayload,
-    };
+    use crate::repositories::{article::delete_article_by_id, comment::set_comment_like};
     use std::str::FromStr;
 
     async fn migrated_pool() -> SqlitePool {
@@ -172,15 +169,9 @@ mod tests {
         insert_comment(&pool, "reply", "article-1", Some("parent")).await;
 
         for comment_id in ["parent", "reply"] {
-            like_comment_db(
-                &pool,
-                LikeCommentPayload {
-                    comment_id: comment_id.to_string(),
-                },
-                "user-1",
-            )
-            .await
-            .unwrap();
+            set_comment_like(&pool, comment_id, "user-1", true)
+                .await
+                .unwrap();
         }
 
         let rows_affected = sqlx::query("DELETE FROM comments WHERE comment_id = 'parent'")
@@ -200,15 +191,9 @@ mod tests {
         insert_article(&pool, "article-1").await;
         insert_user(&pool, "user-1", "user-1").await;
         insert_comment(&pool, "comment-1", "article-1", None).await;
-        like_comment_db(
-            &pool,
-            LikeCommentPayload {
-                comment_id: "comment-1".to_string(),
-            },
-            "user-1",
-        )
-        .await
-        .unwrap();
+        set_comment_like(&pool, "comment-1", "user-1", true)
+            .await
+            .unwrap();
 
         delete_article_by_id(&pool, "article-1").await.unwrap();
 
@@ -217,22 +202,16 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn like_toggle_keeps_record_and_count_in_sync() {
+    async fn like_state_keeps_record_and_count_in_sync() {
         let pool = migrated_pool().await;
         insert_article(&pool, "article-1").await;
         insert_user(&pool, "user-1", "user-1").await;
         insert_comment(&pool, "comment-1", "article-1", None).await;
 
-        for (expected_result, expected_count) in [("liked", 1_i64), ("unliked", 0_i64)] {
-            let result = like_comment_db(
-                &pool,
-                LikeCommentPayload {
-                    comment_id: "comment-1".to_string(),
-                },
-                "user-1",
-            )
-            .await
-            .unwrap();
+        for (liked, expected_count) in [(true, 1_i64), (false, 0_i64)] {
+            let result = set_comment_like(&pool, "comment-1", "user-1", liked)
+                .await
+                .unwrap();
             let like_count: i64 = sqlx::query_scalar(
                 "SELECT like_count FROM comments WHERE comment_id = 'comment-1'",
             )
@@ -240,11 +219,12 @@ mod tests {
             .await
             .unwrap();
 
-            assert_eq!(result, expected_result);
+            assert_eq!(result.liked_by_me, liked);
+            assert_eq!(result.like_count, expected_count);
             assert_eq!(count(&pool, "comment_likes").await, expected_count);
             assert_eq!(like_count, expected_count);
 
-            if expected_result == "liked" {
+            if liked {
                 let created_at: String = sqlx::query_scalar(
                     "SELECT created_at FROM comment_likes WHERE comment_id = 'comment-1'",
                 )

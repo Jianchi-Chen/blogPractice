@@ -1,13 +1,15 @@
 import { defineStore } from "pinia";
 
 export const useSearchStore = defineStore("search", {
-  state: () => ({
-    condition: "",
-  }),
+    state: () => ({
+        condition: "",
+        requestRevision: 0,
+    }),
 
-  actions: {
-    setCondition(value: string) {
-      this.condition = value;
+    actions: {
+        submit(value: string) {
+            this.condition = value;
+            this.requestRevision += 1;
+        },
     },
-  },
 });

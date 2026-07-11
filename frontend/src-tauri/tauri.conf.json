@@ -21,11 +21,7 @@
             }
         ],
         "security": {
-            "csp": null,
-            "assetProtocol": {
-                "enable": true,
-                "scope": ["$APPDATA/**"]
-            }
+            "csp": null
         },
         "withGlobalTauri": false
     },

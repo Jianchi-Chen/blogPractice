@@ -5,7 +5,7 @@
 </template>
 
 <script setup lang="ts">
-import { fetchArticleById } from '@/api/article';
+import { getArticle } from "@/api/articles";
 import ArticleForm from '@/components/article/ArticleForm.vue';
 import type { Article } from '@/types/article';
 import { ref } from 'vue';
@@ -19,7 +19,7 @@ const id = ref(route.params.id as Article["id"])
 
 const init = async () => {
     try {
-        const res = await fetchArticleById(route.params.id as Article["id"])
+        const res = await getArticle(route.params.id as Article["id"])
         // console.log(res.data.id)
         article.value = res.data
     } catch (e) {

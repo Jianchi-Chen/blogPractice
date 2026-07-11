@@ -12,14 +12,13 @@
 <script setup lang="ts">
 import { NDataTable, NButton, useDialog, useMessage } from "naive-ui";
 import type { DataTableBaseColumn, DataTableSortState } from "naive-ui";
-import { deleteArticle, toggleStatus } from "@/api/article";
+import { deleteArticle, updateArticleStatus } from "@/api/articles";
 import { computed, h, ref } from "vue";
 import { useRouter } from "vue-router";
 import StatusTag from "@/components/admin/StatusTag.vue";
 import ArticleAction from "@/components/admin/ArticleAction.vue";
 import type { Article } from "@/types/article";
 import { useArticleStore } from "@/stores/article";
-import { useAppStore } from "@/stores/app";
 
 interface RowData {
     id: string;
@@ -43,7 +42,6 @@ const dialog = useDialog();
 const message = useMessage();
 const tableRef = ref();
 const articleStore = useArticleStore();
-const appstore = useAppStore();
 
 // 收集所有tag
 const allTags = computed(() => {
@@ -140,24 +138,19 @@ const handleDelete = async (id: Article["id"]) => {
         positiveText: "确定",
         negativeText: "取消",
         onPositiveClick: async () => {
-            const res = await deleteArticle(id);
-            if (
-                appstore.isTauri
-                    ? (res.data as any).message === "done"
-                    : (res as any).status === 204
-            ) {
-                message.success("Delete succeeded");
-                emit("refresh");
-            } else {
-                message.error("Delete failed");
-            }
+            await deleteArticle(id);
+            message.success("Delete succeeded");
+            emit("refresh");
         },
     });
 };
 
 // 转换文章状态
-const handleToggleStatus = async (id: Article["id"], toggle: string) => {
-    await toggleStatus(id, toggle);
+const handleToggleStatus = async (
+    id: Article["id"],
+    status: "draft" | "published" | "archived"
+) => {
+    await updateArticleStatus(id, status);
     articleStore.updateFolderContentSignal = true;
     emit("refresh");
 };

@@ -10,6 +10,7 @@ import 'vditor/dist/index.css'
 // 通用字体
 import "vfonts/Lato.css";
 import { useUserStore } from "./stores/user";
+import { getCurrentUser } from "./api/auth";
 
 // msw
 // if (import.meta.env.DEV) {
@@ -19,14 +20,26 @@ import { useUserStore } from "./stores/user";
 //   });
 // }
 
-const app = createApp(App);
-const pinia = createPinia();
+const bootstrap = async () => {
+    const app = createApp(App);
+    const pinia = createPinia();
 
-// Piania、Router、Naive-ui
-app.use(pinia);
-useUserStore(pinia).initFromStorage();
-app.use(router);
-app.use(naive);
+    app.use(pinia);
+    const userStore = useUserStore(pinia);
+    userStore.initFromStorage();
+    if (userStore.token) {
+        try {
+            const response = await getCurrentUser();
+            userStore.updateCurrentUser(response.data);
+        } catch {
+            userStore.logout();
+        }
+    }
 
-app.mount("#app");
+    app.use(router);
+    app.use(naive);
+    app.mount("#app");
+};
+
+void bootstrap();
 

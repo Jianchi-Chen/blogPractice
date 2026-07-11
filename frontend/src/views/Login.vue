@@ -96,7 +96,7 @@ import { useUserStore } from "@/stores/user";
 import axios from "axios";
 import { onMounted, ref, watchEffect } from "vue";
 import { useRouter } from "vue-router";
-import { loginAccount, registerAccount } from "@/api/account";
+import { login, register } from "@/api/auth";
 
 // 状态
 const loading = ref(false);
@@ -190,7 +190,7 @@ const handleLogin = async () => {
         await signinRef.value?.validate();
 
         // 暂时使用模拟请求（你后续用真实 API 替换）
-        const response = await loginAccount(signinForm.value);
+        const response = await login(signinForm.value);
 
         console.log("Login response:", response.data);
 
@@ -200,6 +200,8 @@ const handleLogin = async () => {
             id: response.data.user_id,
             username: response.data.username,
             identity: response.data.identity,
+            signature: "",
+            avatar_url: null,
         };
 
         userStore.login(token, user);
@@ -225,7 +227,7 @@ const handleRegister = async () => {
     try {
         // .validate()验证表单
         await registerRef.value?.validate();
-        const res = await registerAccount(registerForm.value);
+        const res = await register(registerForm.value);
         
         console.log("Register response:", res.data);
         
@@ -241,6 +243,8 @@ const handleRegister = async () => {
             id: res.data.user_id,
             username: res.data.username,
             identity: res.data.identity,
+            signature: "",
+            avatar_url: null,
         };
 
         userStore.login(token, user);

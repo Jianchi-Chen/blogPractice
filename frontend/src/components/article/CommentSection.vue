@@ -61,9 +61,9 @@ const {
     comments,
     ifComment,
     loadComments,
-    postedComment,
-    handlerDeleteComment,
-    likeComment,
+    reloadComments,
+    removeComment,
+    toggleCommentLike,
 } = useComments();
 
 // 初始化和 DOM observer
@@ -85,11 +85,11 @@ const respondComment = (username: string, parent_id: string) => {
 };
 
 const onPosted = async () => {
-    if (props.articleId) await postedComment(props.articleId);
+    if (props.articleId) await reloadComments(props.articleId);
 };
 
-const handleLike = (commentId: string, mode: string) => {
-    likeComment(commentId, mode, props.articleId);
+const handleLike = (commentId: string, _mode: string) => {
+    toggleCommentLike(commentId);
 };
 
 const confirmDelete = (commentId: string) => {
@@ -99,7 +99,7 @@ const confirmDelete = (commentId: string) => {
         positiveText: "确定",
         negativeText: "取消",
         onPositiveClick: async () => {
-            await handlerDeleteComment(commentId, props.articleId);
+            await removeComment(commentId, props.articleId);
         },
     });
 };

@@ -15,6 +15,7 @@ import Sider from "@/components/layout/Sider.vue";
 import { useArticleStore } from "./stores/article";
 import { BackToTop } from "@vicons/carbon";
 import { listen } from "@tauri-apps/api/event";
+import { invoke, isTauri } from "@tauri-apps/api/core";
 import { useMessage } from "naive-ui";
 
 type UpdateStatusPayload = {
@@ -40,6 +41,7 @@ const UpdateStatusListener = defineComponent({
         let unlisten: (() => void) | undefined;
 
         onMounted(async () => {
+            if (!isTauri()) return;
             try {
                 unlisten = await listen<UpdateStatusPayload>(
                     "update_status",
@@ -76,6 +78,9 @@ const UpdateStatusListener = defineComponent({
                         console.log("update_status:", event.payload.status);
                     }
                 );
+                void invoke("check_for_updates").catch((error) => {
+                    console.error("自动检查更新失败", error);
+                });
             } catch (e) {
                 console.error("监听更新事件失败", e);
             }

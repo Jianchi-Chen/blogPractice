@@ -5,7 +5,7 @@
 
 use crate::db::AppState;
 use crate::error::{AppError, AppResult};
-use crate::models::user::find_user_by_id;
+use crate::repositories::user::find_user_by_id;
 use axum::extract::{FromRef, FromRequestParts};
 use axum::http::header::AUTHORIZATION;
 use axum::http::request::Parts;
@@ -136,7 +136,7 @@ pub fn decode_token(state: &AppState, token: &str) -> AppResult<Claims> {
 }
 
 pub async fn is_admin(state: &AppState, user_id: &str) -> AppResult<bool> {
-    let user = find_user_by_id(&state.pool, user_id.to_string()).await?;
+    let user = find_user_by_id(&state.pool, user_id).await?;
     Ok(user.is_some_and(|user| user.identity == "admin"))
 }
 

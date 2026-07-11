@@ -21,7 +21,7 @@ import {
     FolderOpenOutline as FolderIcon,
     BookmarkOutline as BookmarkIcon,
 } from "@vicons/ionicons5";
-import { fetchArticles } from "@/api/article";
+import { getArticles } from "@/api/articles";
 import type { any } from "zod";
 import { useArticleStore } from "@/stores/article";
 
@@ -64,7 +64,7 @@ const loadMenu = async () => {
         menuOptions.value = [goHomeMenuOptions, hrMenuOptions];
         // console.log(menuOptions.value);
 
-        const res = await fetchArticles();
+        const res = await getArticles();
         if (Array.isArray(res.data.articles)) {
             const tagMap = new Map<string, any>(); // 用于快速查找已有标签项
             res.data.articles.forEach((i: any) => {

@@ -44,13 +44,13 @@
 
 <script setup lang="ts">
 import { NButton } from "naive-ui";
-import { fetchArticles } from "@/api/article";
+import { getArticles } from "@/api/articles";
 import { useUserStore } from "@/stores/user";
 import { onMounted, ref } from "vue";
 import { useRouter } from "vue-router";
 import type { Article } from "@/types/article";
 import type { User } from "@/types/user";
-import { fetchUsers } from "@/api/account";
+import { getUsers } from "@/api/users";
 import NewUserDialog from "@/components/admin/NewUserDialog.vue";
 import EditUserDialog from "@/components/admin/EditUserDialog.vue";
 import ArticleManagement from "@/components/admin/ArticleManagement.vue";
@@ -79,10 +79,10 @@ onMounted(() => {
 
 // 加载数据
 const loadArticlesAndUsers = async () => {
-    const res = await fetchArticles();
+    const res = await getArticles();
     articles.value = res.data.articles;
 
-    const resUsers = await fetchUsers(20);
+    const resUsers = await getUsers(20);
     users.value = resUsers.data.users;
 };
 

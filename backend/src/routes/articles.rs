@@ -1,185 +1,132 @@
-use std::sync::Arc;
-
 use axum::{
     Json,
     extract::{Path, Query, State},
+    http::StatusCode,
 };
-use http::StatusCode;
-use serde::{Deserialize, Serialize};
-// use sqlx::types::Json;
+use serde::Serialize;
+use std::sync::Arc;
 
 use crate::{
     auth::{JwtAuth, MaybeJwtAuth, is_admin, require_admin},
     db::AppState,
     error::{AppError, AppResult},
-    models::{
-        article::{
-            ArticleModel, PubArticles, delete_article_by_id, find_article_by_id, get_articles,
-            patch_article_by_id, post_article, put_article_by_id,
-        },
-        user::find_user_by_id,
+    models::article::{
+        Article, ArticleInput, ArticleListQuery, ArticleStatusInput, ArticleSummary,
+    },
+    repositories::article::{
+        create_article, delete_article_by_id, find_article_by_id, list_articles, update_article,
+        update_article_status,
     },
 };
 
 #[derive(Serialize, Debug)]
-pub struct ArticleResponse {
-    articles: Vec<PubArticles>,
+pub struct ArticleListResponse {
+    pub articles: Vec<ArticleSummary>,
 }
 
-#[derive(Deserialize, Clone, Serialize)]
-pub struct NewArticle {
-    pub id: Option<String>,
-    pub title: Option<String>,
-    pub content: Option<String>,
-    pub summary: Option<String>,
-    pub status: Option<String>,
-    pub tags: Option<String>,
-}
-
-#[derive(Deserialize, Clone, Serialize, Debug)]
-pub struct NewStatus {
-    pub toggle: String,
-}
-
-#[derive(Deserialize)]
-#[allow(dead_code)]
-pub struct Params {
-    pub id: String,
-}
-
-// 获取文章的参数
-#[derive(Deserialize, Debug)]
-pub struct GetArticlesParams {
-    pub condition: Option<String>,
-}
-
-/// 获取文章列表
-/// 函数签名的参数、返回值都必须能被handle所识别，才能作为路由处理函数
-pub async fn articles(
+pub async fn list(
     State(state): State<Arc<AppState>>,
     MaybeJwtAuth(auth): MaybeJwtAuth,
-    Query(params): Query<GetArticlesParams>,
-) -> AppResult<Json<ArticleResponse>> {
-    tracing::info!("Fetching articles with params: {:?}", params);
-
+    Query(query): Query<ArticleListQuery>,
+) -> AppResult<Json<ArticleListResponse>> {
     let include_unpublished = match auth {
         Some(claims) => is_admin(&state, &claims.user_id).await?,
         None => false,
     };
-    let res = get_articles(&state.pool, params, include_unpublished).await?;
-
-    // 显示赋值；
-    Ok(Json(ArticleResponse { articles: res }))
+    let articles = list_articles(&state.pool, query, include_unpublished).await?;
+    Ok(Json(ArticleListResponse { articles }))
 }
 
-/// 新增文章
-pub async fn handle_post_article(
+pub async fn create(
     State(state): State<Arc<AppState>>,
-    JwtAuth(auth): JwtAuth,
-    Json(payload): Json<NewArticle>,
-) -> AppResult<Json<NewArticle>> {
-    // 验证权限
-    match find_user_by_id(&state.pool, auth.user_id).await? {
-        Some(u) => {
-            if u.identity != "admin" {
-                return Err(AppError::Forbidden);
-            }
-        }
-        _ => return Err(AppError::BadRequest("No authority".into())),
-    };
-
-    let res = post_article(&state.pool, &payload).await?;
-    tracing::info!("Posting new article: {:?}", payload.title);
-
-    Ok(Json(res.into()))
+    JwtAuth(claims): JwtAuth,
+    Json(input): Json<ArticleInput>,
+) -> AppResult<(StatusCode, Json<Article>)> {
+    require_admin(&state, &claims).await?;
+    validate_article_input(&input)?;
+    let article = create_article(&state.pool, &input).await?;
+    Ok((StatusCode::CREATED, Json(article)))
 }
 
-/// 获取指定文章
-pub async fn handle_get_article(
+pub async fn get(
     State(state): State<Arc<AppState>>,
     MaybeJwtAuth(auth): MaybeJwtAuth,
-    Path(id): Path<String>, // Path提取器，解析动态路由
-) -> AppResult<Json<ArticleModel>> {
-    // 不给整个结构体，降低耦合度
-    let res = find_article_by_id(&state.pool, &id).await?;
-
-    if let Some(v) = res {
-        let can_view_unpublished = match auth {
-            Some(claims) => is_admin(&state, &claims.user_id).await?,
-            None => false,
-        };
-        if v.status.as_deref() != Some("published") && !can_view_unpublished {
-            return Err(AppError::NotFound);
-        }
-        tracing::info!("getted article: {:?}", &v.title);
-        Ok(Json(v))
-    } else {
-        Err(AppError::NotFound)
+    Path(id): Path<String>,
+) -> AppResult<Json<Article>> {
+    let article = find_article_by_id(&state.pool, &id)
+        .await?
+        .ok_or(AppError::NotFound)?;
+    let can_view_unpublished = match auth {
+        Some(claims) => is_admin(&state, &claims.user_id).await?,
+        None => false,
+    };
+    if article.status.as_deref() != Some("published") && !can_view_unpublished {
+        return Err(AppError::NotFound);
     }
+    Ok(Json(article))
 }
 
-/// 删除文章
-pub async fn handle_delete_article(
+pub async fn delete(
     State(state): State<Arc<AppState>>,
+    JwtAuth(claims): JwtAuth,
     Path(id): Path<String>,
-    JwtAuth(auth): JwtAuth,
 ) -> AppResult<StatusCode> {
-    require_admin(&state, &auth).await?;
-    delete_article_by_id(&state.pool, &id).await
+    require_admin(&state, &claims).await?;
+    if delete_article_by_id(&state.pool, &id).await? == 0 {
+        return Err(AppError::NotFound);
+    }
+    Ok(StatusCode::NO_CONTENT)
 }
 
-/// 修改文章
-pub async fn handle_put_article(
+pub async fn update(
     State(state): State<Arc<AppState>>,
+    JwtAuth(claims): JwtAuth,
     Path(id): Path<String>,
-    JwtAuth(auth): JwtAuth,
-    Json(payload): Json<NewArticle>,
-) -> AppResult<Json<ArticleModel>> {
-    let res;
-    if let Some(v) = payload.id.clone()
-        && id != v
-    {
-        return Err(AppError::BadRequest("Json 与路由信息不一".into()));
+    Json(input): Json<ArticleInput>,
+) -> AppResult<Json<Article>> {
+    require_admin(&state, &claims).await?;
+    if input.id.as_deref().is_some_and(|body_id| body_id != id) {
+        return Err(AppError::BadRequest(
+            "article id does not match request path".into(),
+        ));
     }
-
-    let ident = find_user_by_id(&state.pool, auth.user_id).await?;
-    if let Some(v) = ident {
-        if v.identity != "admin" {
-            return Err(AppError::Forbidden);
-        }
-        res = put_article_by_id(&state.pool, &id, payload).await?;
-        return Ok(Json(res));
-    }
-    Err(AppError::BadRequest("修改失败".into()))
+    validate_article_input(&input)?;
+    update_article(&state.pool, &id, input)
+        .await
+        .map(Json)
+        .map_err(map_row_not_found)
 }
 
-/// 更变文章状态
-pub async fn handle_patch_article(
+pub async fn update_status(
     State(state): State<Arc<AppState>>,
+    JwtAuth(claims): JwtAuth,
     Path(id): Path<String>,
-    JwtAuth(auth): JwtAuth,
-    Json(payload): Json<NewStatus>,
-) -> AppResult<Json<ArticleModel>> {
-    let res;
-
-    tracing::info!("Patching article status with payload: {:?}", payload);
-
-    if !matches!(payload.toggle.as_str(), "draft" | "published" | "archived") {
+    Json(input): Json<ArticleStatusInput>,
+) -> AppResult<Json<Article>> {
+    require_admin(&state, &claims).await?;
+    if !matches!(input.status.as_str(), "draft" | "published" | "archived") {
         return Err(AppError::BadRequest("invalid article status".into()));
     }
+    update_article_status(&state.pool, &id, input)
+        .await
+        .map(Json)
+        .map_err(map_row_not_found)
+}
 
-    if (find_article_by_id(&state.pool, &id).await?).is_none() {
-        return Err(AppError::Forbidden);
+fn validate_article_input(input: &ArticleInput) -> AppResult<()> {
+    if input
+        .title
+        .as_deref()
+        .is_none_or(|title| title.trim().is_empty())
+    {
+        return Err(AppError::BadRequest("article title is required".into()));
     }
+    Ok(())
+}
 
-    let ident = find_user_by_id(&state.pool, auth.user_id).await?;
-    if let Some(v) = ident {
-        if v.identity != "admin" {
-            return Err(AppError::Forbidden);
-        }
-        res = patch_article_by_id(&state.pool, &id, payload).await?;
-        return Ok(Json(res));
+fn map_row_not_found(error: sqlx::Error) -> AppError {
+    match error {
+        sqlx::Error::RowNotFound => AppError::NotFound,
+        other => AppError::Sqlx(other),
     }
-
-    Err(AppError::BadRequest("更变文章状态失败".into()))
 }

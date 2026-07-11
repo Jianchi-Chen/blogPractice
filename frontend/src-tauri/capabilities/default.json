@@ -5,32 +5,6 @@
     "description": "enables the default permissions",
     "windows": ["main"],
     "permissions": [
-        "core:default",
-        "dialog:default",
-        "updater:default",
-        "process:default",
-        "process:allow-restart",
-        "core:path:default",
-        {
-            "identifier": "fs:allow-read-file",
-            "allow": [{ "path": "$APPDATA/**" }, { "path": "$APPDATA/*" }]
-        },
-        {
-            "identifier": "fs:allow-read-dir",
-            "allow": [{ "path": "$APPDATA" }, { "path": "$APPDATA/**" }]
-        },
-        {
-            "identifier": "fs:allow-write-file",
-            "allow": [{ "path": "$APPDATA/**" }]
-        },
-        {
-            "identifier": "fs:allow-create",
-            "allow": [{ "path": "$APPDATA/**" }]
-        },
-        {
-            "identifier": "fs:allow-mkdir",
-            "allow": [{ "path": "$APPDATA/**" }]
-        },
-        "fs:allow-exists"
+        "core:default"
     ]
 }

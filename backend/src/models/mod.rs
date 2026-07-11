@@ -1,6 +1,6 @@
-//! models/ 数据访问层。里的代码通常只跟数据库打交道（定义表结构、CRUD 函数），不关心 HTTP、权限、日志等。只服务 routes
+//! HTTP 与持久化层共享的数据结构。
 
 pub mod article;
 pub mod comment;
-pub mod search;
+pub mod favorite;
 pub mod user;

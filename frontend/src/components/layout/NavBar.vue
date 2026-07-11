@@ -16,7 +16,7 @@
                 <template #unchecked> Light </template>
             </n-switch>
             <!-- 搜索框 -->
-            <NavSearch @search="onSearch" />
+            <NavSearch />
         </n-flex>
 
         <n-time
@@ -75,13 +75,6 @@ const submitToggleTheme = () => {
     emit("toggleTheme");
 };
 
-/** 收到子组件的搜索关键词后跳转或过滤 */
-function onSearch(kw: string) {
-    // 示例：跳转到搜索结果页
-    // router.push({ name: 'ArticleList', query: { q: kw } })
-    message.success("搜索中...");
-}
-
 // 利用computed(), 来创建基于其他响应式数据的派生值。当依赖变化时, 其会重新计算
 const menuOptions = computed(() => {
     const items = [
@@ -114,7 +107,7 @@ const menuOptions = computed(() => {
 
             items.push({
                 label: `当前用户: ${username}`,
-                key: "username",
+                key: "/profile",
                 icon: () =>
                     h(
                         NAvatar,
@@ -132,7 +125,7 @@ const menuOptions = computed(() => {
         } else {
             items.push({
                 label: `当前用户: ${userstore.username}`,
-                key: "username",
+                key: "/profile",
                 icon: () =>
                     h(NAvatar, {
                         size: 28,

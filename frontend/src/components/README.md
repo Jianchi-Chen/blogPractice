@@ -36,7 +36,7 @@ components/
 - **UserProfile.vue** - 用户资料卡片（头像、签名）
 - **FavoriteArticles.vue** - 用户收藏文章列表
 
-**使用场景**: UserHome.vue
+**使用场景**: ProfileView.vue
 
 ### 🎨 layout/ - 页面布局
 - **NavBar.vue** - 顶部导航栏

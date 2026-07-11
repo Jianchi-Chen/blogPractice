@@ -13,6 +13,13 @@
                     style="cursor: pointer"
                 />
                 <div class="avatar-actions">
+                    <input
+                        ref="avatarInput"
+                        class="avatar-input"
+                        type="file"
+                        accept="image/png,image/jpeg"
+                        @change="handleAvatarSelected"
+                    />
                     <n-button size="tiny" secondary @click="selectAvatar"
                         >上传头像</n-button
                     >
@@ -89,14 +96,10 @@
 </template>
 
 <script setup lang="ts">
-import { uploadAvatar } from "@/api/account";
-import { open } from "@tauri-apps/plugin-dialog";
-import { appDataDir, join } from "@tauri-apps/api/path";
-import { readFile } from "@tauri-apps/plugin-fs";
+import { deleteAvatar, updateProfile, uploadAvatar } from "@/api/users";
 import { useMessage } from "naive-ui";
 import { ref, computed, watch } from "vue";
 import { useUserStore } from "@/stores/user";
-import { userStorageKey } from "@/utils/userStorage";
 
 interface UserInfo {
     id: string;
@@ -110,6 +113,7 @@ const props = defineProps<{
 const message = useMessage();
 const userStore = useUserStore();
 const showAvatarModal = ref(false);
+const avatarInput = ref<HTMLInputElement | null>(null);
 
 const avatar = computed(() => userStore.avatarUrl);
 
@@ -121,85 +125,67 @@ const initials = computed(() => {
     return props.user.name.slice(0, 2).toUpperCase();
 });
 
-const signatureKey = computed(() =>
-    userStorageKey(props.user.id, "signature")
-);
-const signature = ref("");
+const signature = computed(() => userStore.signature);
 const draftSignature = ref("");
 const editingSignature = ref(false);
 
 watch(
     () => props.user.id,
     () => {
-        signature.value = localStorage.getItem(signatureKey.value) || "";
-        draftSignature.value = signature.value;
+        draftSignature.value = userStore.signature || "";
     },
     { immediate: true }
 );
 
 // 头像选择和上传
 const selectAvatar = async () => {
+    avatarInput.value?.click();
+};
+
+const handleAvatarSelected = async (event: Event) => {
+    const input = event.target as HTMLInputElement;
+    const file = input.files?.[0];
+    if (!file) return;
     try {
-        const selected = await open({
-            multiple: false,
-            filters: [
-                {
-                    name: "图片",
-                    extensions: ["png", "jpg", "jpeg"],
-                },
-            ],
-        });
-
-        if (!selected) {
-            return;
-        }
-
-        const filePath = selected as string;
-        const result = await uploadAvatar(filePath);
-
-        const dataDir = await appDataDir();
-        const fullPath = await join(dataDir, result.path);
-
-        const fileBytes = await readFile(fullPath);
-        const base64 = btoa(
-            new Uint8Array(fileBytes).reduce(
-                (data, byte) => data + String.fromCharCode(byte),
-                ""
-            )
-        );
-
-        const ext = result.path.split(".").pop()?.toLowerCase();
-        const mimeType =
-            ext === "png"
-                ? "image/png"
-                : ext === "jpg" || ext === "jpeg"
-                ? "image/jpeg"
-                : "image/jpeg";
-
-        const base64Url = `data:${mimeType};base64,${base64}`;
-
-        userStore.setAvatar(base64Url);
-
-        message.success("头像上传成功！");
-    } catch (error: any) {
+        const response = await uploadAvatar(file);
+        userStore.updateCurrentUser(response.data);
+        message.success("头像上传成功");
+    } catch (error) {
         console.error("Upload avatar error:", error);
-        message.error(error || "头像上传失败");
+        message.error("头像上传失败");
+    } finally {
+        input.value = "";
     }
 };
 
-const removeAvatar = () => {
-    userStore.setAvatar("");
+const removeAvatar = async () => {
+    try {
+        const response = await deleteAvatar();
+        userStore.updateCurrentUser(response.data);
+        message.success("头像已移除");
+    } catch (error) {
+        console.error("Remove avatar error:", error);
+        message.error("头像移除失败");
+    }
 };
 
 // 签名编辑
-const saveSignature = () => {
-    signature.value = draftSignature.value.trim();
-    localStorage.setItem(signatureKey.value, signature.value);
-    editingSignature.value = false;
+const saveSignature = async () => {
+    try {
+        const response = await updateProfile({
+            signature: draftSignature.value.trim(),
+        });
+        userStore.updateCurrentUser(response.data);
+        editingSignature.value = false;
+        message.success("签名已保存");
+    } catch (error) {
+        console.error("Save signature error:", error);
+        message.error("签名保存失败");
+    }
 };
 
 const cancelSignature = () => {
-    draftSignature.value = signature.value;
+    draftSignature.value = signature.value || "";
     editingSignature.value = false;
 };
 
@@ -234,6 +220,10 @@ const handleShowAvatar = () => {
 .avatar-actions {
     display: flex;
     gap: 8px;
+}
+
+.avatar-input {
+    display: none;
 }
 
 .profile-info .username {

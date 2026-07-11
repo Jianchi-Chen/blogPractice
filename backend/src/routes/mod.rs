@@ -1,14 +1,14 @@
-//! routes/ HTTP 入口，前端直接访问，负责：
-//! 触发中间件（JWT、限流、日志）
-//! 参数校验
-//! 调 models 里的 DB 函数
-//! 把结果包装成 JSON 返回给前端
+//! HTTP routes shared by the browser and desktop clients.
+//! Handlers validate requests, enforce authorization, call repositories, and
+//! serialize the canonical API responses.
 
 pub mod articles;
 pub mod auth;
 pub mod comments;
+pub mod favorites;
 pub mod health;
-pub mod searches;
+mod legacy;
+pub mod search;
 pub mod users;
 
 // 路由聚合：
@@ -19,6 +19,7 @@ pub mod users;
 use crate::db::AppState;
 use axum::{
     Router,
+    extract::DefaultBodyLimit,
     routing::{delete, get, patch, post, put},
 };
 use std::sync::Arc;
@@ -37,35 +38,43 @@ pub fn create_router(state: Arc<AppState>) -> Router {
     // 路由只负责匹配路径和方法，参数由框架自动提取
     let api = Router::new()
         .route("/health", get(health::health))
-        // 认证
-        .route("/api/register", post(auth::register))
-        .route("/api/login", post(auth::login))
-        .route("/api/verify_token", post(auth::verify_token))
-        .route("/api/current_user", post(auth::get_current_user))
-        // 用户管理
-        .route("/api/users", get(users::get_users))
-        .route("/api/users/{user_id}", delete(users::delete_users))
-        .route("/api/editAccount", put(users::edit_account))
-        // 文章
-        .route("/articles", get(articles::articles))
-        .route("/api/article", post(articles::handle_post_article))
-        .route("/article/{id}", get(articles::handle_get_article))
-        .route("/api/article/{id}", delete(articles::handle_delete_article))
-        .route("/api/article/{id}", put(articles::handle_put_article))
-        .route("/api/article/{id}", patch(articles::handle_patch_article))
-        // 评论
-        .route("/comments/{id}", get(comments::handle_get_comments))
-        .route("/api/comment", post(comments::handle_post_comment))
+        // Canonical HTTP API used by both browser and Tauri.
+        .route("/api/auth/register", post(auth::register))
+        .route("/api/auth/login", post(auth::login))
+        .route("/api/auth/me", get(auth::current_user))
+        .route("/api/users", get(users::list))
+        .route("/api/users/me/profile", patch(users::update_profile))
         .route(
-            "/comment/{comment_id}",
-            delete(comments::handle_delete_comment),
+            "/api/users/me/avatar",
+            put(users::upload_avatar).delete(users::delete_avatar),
         )
-        .route("/api/comment/like", put(comments::like_comment))
-        // 搜索
+        .route("/api/users/{id}/avatar", get(users::avatar))
         .route(
-            "/suggestions/{keyword}",
-            get(searches::handle_suggests_by_keys),
+            "/api/users/{id}",
+            patch(users::update).delete(users::delete),
         )
+        .route("/api/articles", get(articles::list).post(articles::create))
+        .route(
+            "/api/articles/{id}",
+            get(articles::get)
+                .put(articles::update)
+                .delete(articles::delete),
+        )
+        .route("/api/articles/{id}/status", patch(articles::update_status))
+        .route(
+            "/api/articles/{id}/comments",
+            get(comments::list).post(comments::create),
+        )
+        .route("/api/comments/{id}", delete(comments::delete))
+        .route("/api/comments/{id}/like", put(comments::set_like))
+        .route("/api/search/suggestions", get(search::suggestions))
+        .route("/api/favorites", get(favorites::list))
+        .route(
+            "/api/favorites/{article_id}",
+            put(favorites::add).delete(favorites::remove),
+        )
+        .merge(legacy::routes())
+        .layer(DefaultBodyLimit::max(3 * 1024 * 1024))
         .with_state(state.clone());
 
     // 返回路由
@@ -122,7 +131,7 @@ mod tests {
         let response = app
             .oneshot(json_request(
                 "POST",
-                "/api/register",
+                "/api/auth/register",
                 json!({
                     "username": "attacker",
                     "password": "password",
@@ -151,7 +160,7 @@ mod tests {
             .clone()
             .oneshot(
                 Request::builder()
-                    .uri("/articles?identity=admin")
+                    .uri("/api/articles")
                     .body(Body::empty())
                     .unwrap(),
             )
@@ -167,7 +176,7 @@ mod tests {
             .clone()
             .oneshot(
                 Request::builder()
-                    .uri("/article/draft-1")
+                    .uri("/api/articles/draft-1")
                     .body(Body::empty())
                     .unwrap(),
             )
@@ -179,7 +188,7 @@ mod tests {
         let admin_detail = app
             .oneshot(
                 Request::builder()
-                    .uri("/article/draft-1")
+                    .uri("/api/articles/draft-1")
                     .header(header::AUTHORIZATION, format!("Bearer {token}"))
                     .body(Body::empty())
                     .unwrap(),
@@ -206,7 +215,7 @@ mod tests {
             .oneshot(
                 Request::builder()
                     .method("DELETE")
-                    .uri("/api/article/article-1")
+                    .uri("/api/articles/article-1")
                     .body(Body::empty())
                     .unwrap(),
             )
@@ -219,7 +228,7 @@ mod tests {
             .oneshot(
                 Request::builder()
                     .method("DELETE")
-                    .uri("/api/article/article-1")
+                    .uri("/api/articles/article-1")
                     .header(header::AUTHORIZATION, format!("Bearer {token}"))
                     .body(Body::empty())
                     .unwrap(),

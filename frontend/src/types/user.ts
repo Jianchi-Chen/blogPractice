@@ -5,8 +5,9 @@ export const UserSchema = z.object({
     username: z.string().min(1, "不能为空"),
     password: z.string().min(1, "不能为空"),
     token: z.string().optional(),
-    identity: z.string().default("vistor").optional(), // optional()需要放在最后
+    identity: z.string().default("visitor").optional(),
     avatarUrl: z.string().optional(),
+    signature: z.string().optional(),
 });
 
 export type User = z.infer<typeof UserSchema>;
@@ -22,9 +23,11 @@ export interface CurrentUser {
     id: string;
     username: string;
     identity: string;
+    signature: string;
+    avatar_url: string | null;
 }
 
-export const createEmptyComment = (): User => {
+export const createEmptyUser = (): User => {
     return UserSchema.parse({
         username: "unknown username",
         password: "unknow password",
@@ -33,9 +36,12 @@ export const createEmptyComment = (): User => {
 
 // 定义修改用户信息时的数据类型，不使用zod
 export interface EditUserData {
-    current_token: string;
     edited_id: string;
     edited_username: string;
     edited_password?: string;
     edited_identity: string;
+}
+
+export interface UpdateProfileData {
+    signature: string;
 }

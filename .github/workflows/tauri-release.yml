@@ -5,9 +5,64 @@ on:
         tags:
             - "v*" # v1.0.0 / v0.1.0-beta 等
     workflow_dispatch:
+        inputs:
+            version:
+                description: "Release tag, for example v1.2.3"
+                required: true
+                type: string
+
+env:
+    RELEASE_TAG: ${{ github.event_name == 'workflow_dispatch' && inputs.version || github.ref_name }}
+    VITE_API_BASE_URL: ${{ vars.VITE_API_BASE_URL }}
 
 jobs:
+    verify:
+        runs-on: ubuntu-latest
+
+        steps:
+            - name: Checkout repository
+              uses: actions/checkout@v4
+
+            - name: Validate release configuration
+              shell: bash
+              run: |
+                  if [[ ! "$RELEASE_TAG" =~ ^v[0-9]+\.[0-9]+\.[0-9]+(-[0-9A-Za-z.-]+)?(\+[0-9A-Za-z.-]+)?$ ]]; then
+                      echo "RELEASE_TAG must be a semantic version prefixed with v" >&2
+                      exit 1
+                  fi
+                  node -e "const url = new URL(process.env.VITE_API_BASE_URL || ''); if (url.protocol !== 'https:' || url.pathname !== '/' || url.search || url.hash) throw new Error('VITE_API_BASE_URL must be an HTTPS origin without a path')"
+
+            - name: Setup Node.js
+              uses: actions/setup-node@v4
+              with:
+                  node-version: "20"
+                  cache: npm
+                  cache-dependency-path: frontend/package-lock.json
+
+            - name: Install frontend dependencies
+              working-directory: frontend
+              run: npm ci
+
+            - name: Test frontend
+              working-directory: frontend
+              run: npm run test
+
+            - name: Setup Rust
+              uses: actions-rust-lang/setup-rust-toolchain@v1
+
+            - name: Install Tauri test dependencies
+              run: |
+                  sudo apt-get update
+                  sudo apt-get install -y --no-install-recommends libwebkit2gtk-4.1-dev libappindicator3-dev librsvg2-dev
+
+            - name: Test HTTP API contract
+              run: cargo test --manifest-path backend/Cargo.toml
+
+            - name: Test desktop boundary
+              run: cargo test --manifest-path frontend/src-tauri/Cargo.toml
+
     build:
+        needs: verify
         permissions:
             contents: write
 
@@ -35,7 +90,7 @@ jobs:
               with:
                   node-version: "20"
                   cache: "npm"
-                  cache-dependency-path: frontend/package.json
+                  cache-dependency-path: frontend/package-lock.json
 
             - name: Install jq (JSON processor)
               shell: bash
@@ -69,12 +124,12 @@ jobs:
 
             - name: Install frontend dependencies
               working-directory: frontend
-              run: npm install
+              run: npm ci
 
             - name: Update version in all config files
               shell: bash
               run: |
-                  VERSION="${{ github.ref_name }}"
+                  VERSION="$RELEASE_TAG"
                   VERSION="${VERSION#v}"  # 移除 v 前缀
 
                   echo "Updating to version: $VERSION"
@@ -160,14 +215,14 @@ jobs:
                   TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
               with:
                   projectPath: frontend
-                  tagName: ${{ github.ref_name }}
-                  releaseName: "Release ${{ github.ref_name }}"
+                  tagName: ${{ env.RELEASE_TAG }}
+                  releaseName: "Release ${{ env.RELEASE_TAG }}"
                   releaseBody: |
                       📝 Auto-generated release for ${{ matrix.platform }}
 
                       - Built with Tauri
                       - Frontend: Vue3 + Vite
-                      - Backend: Rust + SQLite
+                      - API: shared Axum HTTP service
 
                       **Downloads:**
                       - Windows: `.msi` installer
@@ -175,7 +230,8 @@ jobs:
                       - Linux: `.deb`, `.rpm`, `.AppImage`
 
                       **自动更新支持**: 应用内检查更新功能已启用
-                  prerelease: false
+                  prerelease: ${{ contains(env.RELEASE_TAG, '-') }}
+                  releaseDraft: true
                   includeRelease: true
                   includeDebug: false
                   # 关键：确保生成 updater artifacts 和 latest.json
@@ -183,8 +239,26 @@ jobs:
                   updaterJsonKeepUniversal: true
                   updaterJsonPreferNsis: false
 
+    publish:
+        needs: build
+        runs-on: ubuntu-latest
+        permissions:
+            contents: write
+
+        steps:
+            - name: Publish complete stable release
+              if: ${{ !contains(env.RELEASE_TAG, '-') }}
+              env:
+                  GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+              run: gh release edit "$RELEASE_TAG" --draft=false --prerelease=false --repo "$GITHUB_REPOSITORY"
+
+            - name: Publish complete prerelease
+              if: ${{ contains(env.RELEASE_TAG, '-') }}
+              env:
+                  GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+              run: gh release edit "$RELEASE_TAG" --draft=false --prerelease --repo "$GITHUB_REPOSITORY"
+
             - name: Delete older releases
-              if: matrix.platform == 'windows-latest'
               uses: dev-drprasad/delete-older-releases@v0.3.2
               with:
                   keep_latest: 2
